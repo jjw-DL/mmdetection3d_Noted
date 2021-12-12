@@ -11,7 +11,7 @@ def get_image_index_str(img_idx, use_prefix_id=False):
     if use_prefix_id:
         return '{:07d}'.format(img_idx)
     else:
-        return '{:06d}'.format(img_idx)
+        return '{:06d}'.format(img_idx) # 设置图片的id的格式 000013
 
 
 def get_kitti_info_path(idx,
@@ -22,19 +22,19 @@ def get_kitti_info_path(idx,
                         relative_path=True,
                         exist_check=True,
                         use_prefix_id=False):
-    img_idx_str = get_image_index_str(idx, use_prefix_id)
-    img_idx_str += file_tail
-    prefix = Path(prefix)
+    img_idx_str = get_image_index_str(idx, use_prefix_id) # 000013
+    img_idx_str += file_tail # 000013.bin
+    prefix = Path(prefix) # ../data/kitti
     if training:
-        file_path = Path('training') / info_type / img_idx_str
+        file_path = Path('training') / info_type / img_idx_str # training/velodyne/000013.bin
     else:
         file_path = Path('testing') / info_type / img_idx_str
-    if exist_check and not (prefix / file_path).exists():
+    if exist_check and not (prefix / file_path).exists(): # 检查路径是否存在
         raise ValueError('file not exist: {}'.format(file_path))
     if relative_path:
-        return str(file_path)
+        return str(file_path) # training/velodyne/000013.bin
     else:
-        return str(prefix / file_path)
+        return str(prefix / file_path) # ../data/kitti/training/velodyne/000013.bin
 
 
 def get_image_path(idx,
@@ -90,7 +90,7 @@ def get_pose_path(idx,
 
 
 def get_label_anno(label_path):
-    annotations = {}
+    annotations = {} # 初始化
     annotations.update({
         'name': [],
         'truncated': [],
@@ -101,14 +101,17 @@ def get_label_anno(label_path):
         'location': [],
         'rotation_y': []
     })
+    # 读取标签信息
     with open(label_path, 'r') as f:
         lines = f.readlines()
     # if len(lines) == 0 or len(lines[0]) < 15:
     #     content = []
     # else:
-    content = [line.strip().split(' ') for line in lines]
-    num_objects = len([x[0] for x in content if x[0] != 'DontCare'])
-    annotations['name'] = np.array([x[0] for x in content])
+    
+    content = [line.strip().split(' ') for line in lines] # 将标签信息分成列表
+    num_objects = len([x[0] for x in content if x[0] != 'DontCare']) # 计算不是'DontCare'的物体数目
+    # 逐个item赋值
+    annotations['name'] = np.array([x[0] for x in content]) 
     num_gt = len(annotations['name'])
     annotations['truncated'] = np.array([float(x[1]) for x in content])
     annotations['occluded'] = np.array([int(x[2]) for x in content])
@@ -127,7 +130,7 @@ def get_label_anno(label_path):
         annotations['score'] = np.array([float(x[15]) for x in content])
     else:
         annotations['score'] = np.zeros((annotations['bbox'].shape[0], ))
-    index = list(range(num_objects)) + [-1] * (num_gt - num_objects)
+    index = list(range(num_objects)) + [-1] * (num_gt - num_objects) # 生成物体索引并将'DontCare'的索引标记为-1
     annotations['index'] = np.array(index, dtype=np.int32)
     annotations['group_ids'] = np.arange(num_gt, dtype=np.int32)
     return annotations
@@ -176,40 +179,43 @@ def get_kitti_image_info(path,
         }
     }
     """
-    root_path = Path(path)
+    root_path = Path(path) # ../data/kitti
     if not isinstance(image_ids, list):
         image_ids = list(range(image_ids))
 
     def map_func(idx):
-        info = {}
-        pc_info = {'num_features': 4}
-        calib_info = {}
+        info = {} # 初始化空字典
+        pc_info = {'num_features': 4} # 点云信息字典
+        calib_info = {} # 标定信息字典
 
-        image_info = {'image_idx': idx}
+        image_info = {'image_idx': idx} # 图像的id信息
         annotations = None
         if velodyne:
             pc_info['velodyne_path'] = get_velodyne_path(
-                idx, path, training, relative_path)
+                idx, path, training, relative_path) # training/velodyne/000013.bin
         image_info['image_path'] = get_image_path(idx, path, training,
                                                   relative_path)
         if with_imageshape:
-            img_path = image_info['image_path']
+            img_path = image_info['image_path'] # '../data/kitti/training/image_2/000013.png'
             if relative_path:
                 img_path = str(root_path / img_path)
             image_info['image_shape'] = np.array(
-                io.imread(img_path).shape[:2], dtype=np.int32)
+                io.imread(img_path).shape[:2], dtype=np.int32) # [375, 1242]
+        
         if label_info:
-            label_path = get_label_path(idx, path, training, relative_path)
+            label_path = get_label_path(idx, path, training, relative_path) # 'training/label_2/000013.txt'
             if relative_path:
-                label_path = str(root_path / label_path)
-            annotations = get_label_anno(label_path)
-        info['image'] = image_info
-        info['point_cloud'] = pc_info
-        if calib:
+                label_path = str(root_path / label_path) # '../data/kitti/training/label_2/000013.txt'
+            annotations = get_label_anno(label_path) # 根据label.txt生成annotations信息
+        info['image'] = image_info # 加入图像信息
+        info['point_cloud'] = pc_info # 加入点云信息
+
+        if calib: # 获取标定信息
             calib_path = get_calib_path(
-                idx, path, training, relative_path=False)
-            with open(calib_path, 'r') as f:
+                idx, path, training, relative_path=False) # '../data/kitti/training/calib/000013.txt'
+            with open(calib_path, 'r') as f: # 读取标定文件
                 lines = f.readlines()
+            # 读取P0，P1，P2，P3以及R0_rect矩阵
             P0 = np.array([float(info) for info in lines[0].split(' ')[1:13]
                            ]).reshape([3, 4])
             P1 = np.array([float(info) for info in lines[1].split(' ')[1:13]
@@ -218,7 +224,7 @@ def get_kitti_image_info(path,
                            ]).reshape([3, 4])
             P3 = np.array([float(info) for info in lines[3].split(' ')[1:13]
                            ]).reshape([3, 4])
-            if extend_matrix:
+            if extend_matrix: # 扩展transform矩阵为4x4的矩阵
                 P0 = _extend_matrix(P0)
                 P1 = _extend_matrix(P1)
                 P2 = _extend_matrix(P2)
@@ -232,7 +238,7 @@ def get_kitti_image_info(path,
                 rect_4x4[:3, :3] = R0_rect
             else:
                 rect_4x4 = R0_rect
-
+            # 读取Tr_velo_to_cam和Tr_imu_to_velo矩阵
             Tr_velo_to_cam = np.array([
                 float(info) for info in lines[5].split(' ')[1:13]
             ]).reshape([3, 4])
@@ -249,13 +255,14 @@ def get_kitti_image_info(path,
             calib_info['R0_rect'] = rect_4x4
             calib_info['Tr_velo_to_cam'] = Tr_velo_to_cam
             calib_info['Tr_imu_to_velo'] = Tr_imu_to_velo
-            info['calib'] = calib_info
+            info['calib'] = calib_info # 将标定信息写入info中
 
         if annotations is not None:
-            info['annos'] = annotations
-            add_difficulty_to_annos(info)
+            info['annos'] = annotations # 将annos信息写入info中
+            add_difficulty_to_annos(info) # 添加difficulty信息到info的annotations中
         return info
-
+        
+    # 调用多线程处理标志信息
     with futures.ThreadPoolExecutor(num_worker) as executor:
         image_infos = executor.map(map_func, image_ids)
 
@@ -465,6 +472,7 @@ def kitti_anno_to_label_file(annos, folder):
 
 
 def add_difficulty_to_annos(info):
+    # 定义3个难度的最小高度，最大遮挡级别和最大截断程度阈值
     min_height = [40, 25,
                   25]  # minimum height for evaluated groundtruth/detections
     max_occlusion = [
@@ -473,17 +481,19 @@ def add_difficulty_to_annos(info):
     max_trunc = [
         0.15, 0.3, 0.5
     ]  # maximum truncation level of the groundtruth used for evaluation
-    annos = info['annos']
+    annos = info['annos'] # 取出annos信息
     dims = annos['dimensions']  # lhw format
     bbox = annos['bbox']
-    height = bbox[:, 3] - bbox[:, 1]
-    occlusion = annos['occluded']
-    truncation = annos['truncated']
+    height = bbox[:, 3] - bbox[:, 1] # 计算最小高度
+    occlusion = annos['occluded'] # 获取遮挡程度
+    truncation = annos['truncated'] # 获取截断程度
     diff = []
+    # 定义三个难度的mask
     easy_mask = np.ones((len(dims), ), dtype=np.bool)
     moderate_mask = np.ones((len(dims), ), dtype=np.bool)
     hard_mask = np.ones((len(dims), ), dtype=np.bool)
     i = 0
+    # 循环对最小高度，最大遮挡级别和最大截断程度判断
     for h, o, t in zip(height, occlusion, truncation):
         if o > max_occlusion[0] or h <= min_height[0] or t > max_trunc[0]:
             easy_mask[i] = False
@@ -492,9 +502,9 @@ def add_difficulty_to_annos(info):
         if o > max_occlusion[2] or h <= min_height[2] or t > max_trunc[2]:
             hard_mask[i] = False
         i += 1
-    is_easy = easy_mask
-    is_moderate = np.logical_xor(easy_mask, moderate_mask)
-    is_hard = np.logical_xor(hard_mask, moderate_mask)
+    is_easy = easy_mask # [True, False]
+    is_moderate = np.logical_xor(easy_mask, moderate_mask) # 异或 [True, False] xor [True, True] --> [False, True]
+    is_hard = np.logical_xor(hard_mask, moderate_mask) # [True, True] xor [True, True] --> [False, False]
 
     for i in range(len(dims)):
         if is_easy[i]:
@@ -505,8 +515,8 @@ def add_difficulty_to_annos(info):
             diff.append(2)
         else:
             diff.append(-1)
-    annos['difficulty'] = np.array(diff, np.int32)
-    return diff
+    annos['difficulty'] = np.array(diff, np.int32) # difficulty信息加入annos中
+    return diff # [0, 1]
 
 
 def kitti_result_line(result_dict, precision=4):

@@ -40,7 +40,7 @@ class DeltaXYZWLHRBBoxCoder(BaseBBoxCoder):
                 dst_boxes, 1, dim=-1)
             cts = [g - a for g, a in zip(cgs, cas)]
         else:
-            xa, ya, za, wa, la, ha, ra = torch.split(src_boxes, 1, dim=-1)
+            xa, ya, za, wa, la, ha, ra = torch.split(src_boxes, 1, dim=-1) # 在最后一个维度将bbox分割 [28, 1]
             xg, yg, zg, wg, lg, hg, rg = torch.split(dst_boxes, 1, dim=-1)
         za = za + ha / 2
         zg = zg + hg / 2

@@ -48,25 +48,36 @@ def _calculate_num_points_in_gt(data_path,
                                 relative_path,
                                 remove_outside=True,
                                 num_features=4):
+    """计算每帧点云的gt box内点的数量，并写入annos['num_points_in_gt']中
+
+    Args:
+        data_path (str): Path of the data root.
+        info (dict): Info of the input kitti data.
+            - image (dict): image info
+            - calib (dict): calibration info
+            - point_cloud (dict): point cloud info
+        relative_path (bool): Whether to use relative path.
+    """
+    # 逐帧计算
     for info in mmcv.track_iter_progress(infos):
         pc_info = info['point_cloud']
         image_info = info['image']
         calib = info['calib']
         if relative_path:
-            v_path = str(Path(data_path) / pc_info['velodyne_path'])
+            v_path = str(Path(data_path) / pc_info['velodyne_path']) # 拼接点云路径
         else:
             v_path = pc_info['velodyne_path']
         points_v = np.fromfile(
-            v_path, dtype=np.float32, count=-1).reshape([-1, num_features])
+            v_path, dtype=np.float32, count=-1).reshape([-1, num_features]) # 读取点云
         rect = calib['R0_rect']
         Trv2c = calib['Tr_velo_to_cam']
         P2 = calib['P2']
         if remove_outside:
             points_v = box_np_ops.remove_outside_points(
-                points_v, rect, Trv2c, P2, image_info['image_shape'])
+                points_v, rect, Trv2c, P2, image_info['image_shape']) # 移除在图像外的点云
 
         # points_v = points_v[points_v[:, 0] > 0]
-        annos = info['annos']
+        annos = info['annos'] # 提取annos信息
         num_obj = len([n for n in annos['name'] if n != 'DontCare'])
         # annos = kitti.filter_kitti_anno(annos, ['DontCare'])
         dims = annos['dimensions'][:num_obj]
@@ -75,13 +86,13 @@ def _calculate_num_points_in_gt(data_path,
         gt_boxes_camera = np.concatenate([loc, dims, rots[..., np.newaxis]],
                                          axis=1)
         gt_boxes_lidar = box_np_ops.box_camera_to_lidar(
-            gt_boxes_camera, rect, Trv2c)
-        indices = box_np_ops.points_in_rbbox(points_v[:, :3], gt_boxes_lidar)
-        num_points_in_gt = indices.sum(0)
-        num_ignored = len(annos['dimensions']) - num_obj
+            gt_boxes_camera, rect, Trv2c) # 将camera坐标系下的box 3d转换到lidar坐标系下
+        indices = box_np_ops.points_in_rbbox(points_v[:, :3], gt_boxes_lidar) # 判断点是否在gt_boxes_lidar内，返回True或False值
+        num_points_in_gt = indices.sum(0) # 计算gt box内的有效点数
+        num_ignored = len(annos['dimensions']) - num_obj # 计算被忽略的物体数
         num_points_in_gt = np.concatenate(
-            [num_points_in_gt, -np.ones([num_ignored])])
-        annos['num_points_in_gt'] = num_points_in_gt.astype(np.int32)
+            [num_points_in_gt, -np.ones([num_ignored])]) # 将gt box内的有效点数和被忽略的物体数拼接
+        annos['num_points_in_gt'] = num_points_in_gt.astype(np.int32) # 将num_points_in_gt加入annos中
 
 
 def create_kitti_info_file(data_path,
@@ -98,16 +109,17 @@ def create_kitti_info_file(data_path,
         save_path (str): Path to save the info file.
         relative_path (bool): Whether to use relative path.
     """
-    imageset_folder = Path(data_path) / 'ImageSets'
-    train_img_ids = _read_imageset_file(str(imageset_folder / 'train.txt'))
-    val_img_ids = _read_imageset_file(str(imageset_folder / 'val.txt'))
-    test_img_ids = _read_imageset_file(str(imageset_folder / 'test.txt'))
+    imageset_folder = Path(data_path) / 'ImageSets' # ../data/kitti/ImageSets
+    train_img_ids = _read_imageset_file(str(imageset_folder / 'train.txt')) # 获取训练数据索引 eg:[0, 3, 7, 9, 10, 11...]
+    val_img_ids = _read_imageset_file(str(imageset_folder / 'val.txt')) # 获取验证数据索引
+    test_img_ids = _read_imageset_file(str(imageset_folder / 'test.txt')) # 获取测试数据索引
 
     print('Generate info. this may take several minutes.')
     if save_path is None:
-        save_path = Path(data_path)
+        save_path = Path(data_path) # ../data/kitti
     else:
         save_path = Path(save_path)
+    # 获取info信息，返回infos为3712的list，每个元素包含image，point_cloud,calib和annos信息
     kitti_infos_train = get_kitti_image_info(
         data_path,
         training=True,
@@ -115,10 +127,14 @@ def create_kitti_info_file(data_path,
         calib=True,
         image_ids=train_img_ids,
         relative_path=relative_path)
+    # 计算每一帧点云gt box内的点云数，并加入annos中
     _calculate_num_points_in_gt(data_path, kitti_infos_train, relative_path)
-    filename = save_path / f'{pkl_prefix}_infos_train.pkl'
+    
+    filename = save_path / f'{pkl_prefix}_infos_train.pkl' # 拼接train_infos文件名称
     print(f'Kitti info train file is saved to {filename}')
-    mmcv.dump(kitti_infos_train, filename)
+    mmcv.dump(kitti_infos_train, filename) # 将infos信息写入文件中
+
+    # 计算val infos并写入文件kitti_infos_val.pkl
     kitti_infos_val = get_kitti_image_info(
         data_path,
         training=True,
@@ -130,10 +146,13 @@ def create_kitti_info_file(data_path,
     filename = save_path / f'{pkl_prefix}_infos_val.pkl'
     print(f'Kitti info val file is saved to {filename}')
     mmcv.dump(kitti_infos_val, filename)
+
+    # 将train和val的infos信息合并写入文件kitti_infos_trainval.pkl
     filename = save_path / f'{pkl_prefix}_infos_trainval.pkl'
     print(f'Kitti info trainval file is saved to {filename}')
     mmcv.dump(kitti_infos_train + kitti_infos_val, filename)
 
+    # 计算test infos并写入文件kitti_infos_test.pkl
     kitti_infos_test = get_kitti_image_info(
         data_path,
         training=False,
@@ -233,7 +252,7 @@ def _create_reduced_point_cloud(data_path,
                                 back=False,
                                 num_features=4,
                                 front_camera_id=2):
-    """Create reduced point clouds for given info.
+    """Create reduced point clouds for given info, 并保存裁剪后的点云文件到对应文件夹
 
     Args:
         data_path (str): Path of original data.
@@ -244,8 +263,9 @@ def _create_reduced_point_cloud(data_path,
         num_features (int): Number of point features. Default: 4.
         front_camera_id (int): The referenced/front camera ID. Default: 2.
     """
+    # 加载infos文件
     kitti_infos = mmcv.load(info_path)
-
+    # 逐帧处理
     for info in mmcv.track_iter_progress(kitti_infos):
         pc_info = info['point_cloud']
         image_info = info['image']
@@ -268,10 +288,11 @@ def _create_reduced_point_cloud(data_path,
         # then remove outside.
         if back:
             points_v[:, 0] = -points_v[:, 0]
+        # 根据前面读取的点云、图像和标定信息，去除不在图像范围内的点云
         points_v = box_np_ops.remove_outside_points(points_v, rect, Trv2c, P2,
                                                     image_info['image_shape'])
         if save_path is None:
-            save_dir = v_path.parent.parent / (v_path.parent.stem + '_reduced')
+            save_dir = v_path.parent.parent / (v_path.parent.stem + '_reduced') # velodyne_reduced
             if not save_dir.exists():
                 save_dir.mkdir()
             save_filename = save_dir / v_path.name
@@ -338,19 +359,23 @@ def export_2d_annotation(root_path, info_path, mono3d=True):
         mono3d (bool): Whether to export mono3d annotation. Default: True.
     """
     # get bbox annotations for camera
-    kitti_infos = mmcv.load(info_path)
+    kitti_infos = mmcv.load(info_path) # 加载infos文件
     cat2Ids = [
         dict(id=kitti_categories.index(cat_name), name=cat_name)
         for cat_name in kitti_categories
-    ]
+    ] # 将类别的名称映射为id，根据id可以找到类比名称
     coco_ann_id = 0
     coco_2d_dict = dict(annotations=[], images=[], categories=cat2Ids)
     from os import path as osp
+    # 逐帧处理
     for info in mmcv.track_iter_progress(kitti_infos):
+        # 获取2D标注信息
         coco_infos = get_2d_boxes(info, occluded=[0, 1, 2, 3], mono3d=mono3d)
+        # 获取图像宽高
         (height, width,
          _) = mmcv.imread(osp.join(root_path,
                                    info['image']['image_path'])).shape
+        # 将图片路径，id，标定信息和图像宽高写入coco_2d_dict
         coco_2d_dict['images'].append(
             dict(
                 file_name=info['image']['image_path'],
@@ -361,6 +386,7 @@ def export_2d_annotation(root_path, info_path, mono3d=True):
                 cam_intrinsic=info['calib']['P2'],
                 width=width,
                 height=height))
+        # 将标注信息逐个写入
         for coco_info in coco_infos:
             if coco_info is None:
                 continue
@@ -373,6 +399,7 @@ def export_2d_annotation(root_path, info_path, mono3d=True):
         json_prefix = f'{info_path[:-4]}_mono3d'
     else:
         json_prefix = f'{info_path[:-4]}'
+    # 将2D标注信息存为文件
     mmcv.dump(coco_2d_dict, f'{json_prefix}.coco.json')
 
 

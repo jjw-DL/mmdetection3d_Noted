@@ -16,10 +16,10 @@ def kitti_data_prep(root_path, info_prefix, version, out_dir):
     2D annotations and groundtruth database.
 
     Args:
-        root_path (str): Path of dataset root.
-        info_prefix (str): The prefix of info filenames.
-        version (str): Dataset version.
-        out_dir (str): Output directory of the groundtruth database info.
+        root_path (str): Path of dataset root. --> ../data/kitti
+        info_prefix (str): The prefix of info filenames. --> kitti
+        version (str): Dataset version. --> v1.0
+        out_dir (str): Output directory of the groundtruth database info. --> ../data/kitti
     """
     kitti.create_kitti_info_file(root_path, info_prefix)
     kitti.create_reduced_point_cloud(root_path, info_prefix)
@@ -29,11 +29,14 @@ def kitti_data_prep(root_path, info_prefix, version, out_dir):
     info_trainval_path = osp.join(root_path,
                                   f'{info_prefix}_infos_trainval.pkl')
     info_test_path = osp.join(root_path, f'{info_prefix}_infos_test.pkl')
+
+    # 将标注信息转换为coco格式
     kitti.export_2d_annotation(root_path, info_train_path)
     kitti.export_2d_annotation(root_path, info_val_path)
     kitti.export_2d_annotation(root_path, info_trainval_path)
     kitti.export_2d_annotation(root_path, info_test_path)
 
+    # 创建database相关文件
     create_groundtruth_database(
         'KittiDataset',
         root_path,
@@ -184,33 +187,33 @@ def waymo_data_prep(root_path,
 
 
 parser = argparse.ArgumentParser(description='Data converter arg parser')
-parser.add_argument('dataset', metavar='kitti', help='name of the dataset')
+parser.add_argument('dataset', metavar='kitti', help='name of the dataset') # 数据集名称
 parser.add_argument(
     '--root-path',
     type=str,
     default='./data/kitti',
-    help='specify the root path of dataset')
+    help='specify the root path of dataset') # 数据集的根目录
 parser.add_argument(
     '--version',
     type=str,
     default='v1.0',
     required=False,
-    help='specify the dataset version, no need for kitti')
+    help='specify the dataset version, no need for kitti') # 数据集版本，给nuscenes使用
 parser.add_argument(
     '--max-sweeps',
     type=int,
     default=10,
     required=False,
-    help='specify sweeps of lidar per example')
+    help='specify sweeps of lidar per example') # 每个关键帧之间最多包含10帧过渡帧，给nuscenes使用
 parser.add_argument(
     '--out-dir',
     type=str,
     default='./data/kitti',
     required='False',
-    help='name of info pkl')
+    help='name of info pkl') # 指定infos文件输出文件夹
 parser.add_argument('--extra-tag', type=str, default='kitti')
 parser.add_argument(
-    '--workers', type=int, default=4, help='number of threads to be used')
+    '--workers', type=int, default=4, help='number of threads to be used') # 线程数
 args = parser.parse_args()
 
 if __name__ == '__main__':

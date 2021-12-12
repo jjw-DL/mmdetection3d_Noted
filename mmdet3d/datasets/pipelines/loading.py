@@ -377,6 +377,7 @@ class LoadPointsFromFile(object):
 
     def _load_points(self, pts_filename):
         """Private function to load point clouds data.
+           私有函数，加载点云
 
         Args:
             pts_filename (str): Filename of point clouds data.
@@ -384,10 +385,13 @@ class LoadPointsFromFile(object):
         Returns:
             np.ndarray: An array containing point clouds data.
         """
+        # 如果为定义文件客户端，先初始化文件客户端
         if self.file_client is None:
             self.file_client = mmcv.FileClient(**self.file_client_args)
         try:
+            # 以bytes方式加载点云文件
             pts_bytes = self.file_client.get(pts_filename)
+            # 将bytes文件转换为array
             points = np.frombuffer(pts_bytes, dtype=np.float32)
         except ConnectionError:
             mmcv.check_file_exist(pts_filename)
@@ -410,15 +414,16 @@ class LoadPointsFromFile(object):
 
                 - points (:obj:`BasePoints`): Point clouds data.
         """
-        pts_filename = results['pts_filename']
-        points = self._load_points(pts_filename)
-        points = points.reshape(-1, self.load_dim)
-        points = points[:, self.use_dim]
+        pts_filename = results['pts_filename'] # 读取文件名称
+        points = self._load_points(pts_filename) # 加载点云为1d的numpy array形式
+        points = points.reshape(-1, self.load_dim) # reshape
+        points = points[:, self.use_dim] # 取出要使用的点云维度
         attribute_dims = None
 
         if self.shift_height:
-            floor_height = np.percentile(points[:, 2], 0.99)
-            height = points[:, 2] - floor_height
+            floor_height = np.percentile(points[:, 2], 0.99) # 认为地面高度为小于99%的点
+            height = points[:, 2] - floor_height # 重新计算高度
+            # 对于点的原始x，y，z以及height和points的后面的维度特征在最后一个维度融合
             points = np.concatenate(
                 [points[:, :3],
                  np.expand_dims(height, 1), points[:, 3:]], 1)
@@ -428,6 +433,7 @@ class LoadPointsFromFile(object):
             assert len(self.use_dim) >= 6
             if attribute_dims is None:
                 attribute_dims = dict()
+            # 颜色在最后3维上
             attribute_dims.update(
                 dict(color=[
                     points.shape[1] - 3,
@@ -435,7 +441,8 @@ class LoadPointsFromFile(object):
                     points.shape[1] - 1,
                 ]))
 
-        points_class = get_points_type(self.coord_type)
+        points_class = get_points_type(self.coord_type) # 根据坐标类型获取点云类型
+        # 构造点的类
         points = points_class(
             points, points_dim=points.shape[-1], attribute_dims=attribute_dims)
         results['points'] = points
@@ -623,6 +630,7 @@ class LoadAnnotations3D(LoadAnnotations):
 
     def __call__(self, results):
         """Call function to load multiple types annotations.
+        根据各种标志信息，调用对应函数，读取annotations信息，并写入result
 
         Args:
             results (dict): Result dict from :obj:`mmdet3d.CustomDataset`.

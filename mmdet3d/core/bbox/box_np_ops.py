@@ -19,11 +19,11 @@ def camera_to_lidar(points, r_rect, velo2cam):
     Returns:
         np.ndarray, shape=[N, 3]: Points in lidar coordinate.
     """
-    points_shape = list(points.shape[0:-1])
+    points_shape = list(points.shape[0:-1]) # N
     if points.shape[-1] == 3:
-        points = np.concatenate([points, np.ones(points_shape + [1])], axis=-1)
-    lidar_points = points @ np.linalg.inv((r_rect @ velo2cam).T)
-    return lidar_points[..., :3]
+        points = np.concatenate([points, np.ones(points_shape + [1])], axis=-1) # [N, 4]
+    lidar_points = points @ np.linalg.inv((r_rect @ velo2cam).T) # 将相机坐标系下的点转到激光雷达坐标系下
+    return lidar_points[..., :3] # 返回前3维
 
 
 def box_camera_to_lidar(data, r_rect, velo2cam):
@@ -291,7 +291,7 @@ def corner_to_standup_nd_jit(boxes_corner):
 def corner_to_surfaces_3d_jit(corners):
     """Convert 3d box corners from corner function above to surfaces that
     normal vectors all direct to internal.
-
+    将立方体从8个角点转换为6个面 (N, 8, 3) --> (N, 6, 4, 3)
     Args:
         corners (np.ndarray): 3d box corners with the shape of (N, 8, 3).
 
@@ -303,7 +303,7 @@ def corner_to_surfaces_3d_jit(corners):
     surfaces = np.zeros((num_boxes, 6, 4, 3), dtype=corners.dtype)
     corner_idxes = np.array([
         0, 1, 2, 3, 7, 6, 5, 4, 0, 3, 7, 4, 1, 5, 6, 2, 0, 4, 5, 1, 3, 2, 6, 7
-    ]).reshape(6, 4)
+    ]).reshape(6, 4) # 上下前后左右 共6个面
     for i in range(num_boxes):
         for j in range(6):
             for k in range(4):
@@ -440,9 +440,9 @@ def points_in_rbbox(points, rbbox, z_axis=2, origin=(0.5, 0.5, 0)):
     # TODO: this function is different from PointCloud3D, be careful
     # when start to use nuscene, check the input
     rbbox_corners = center_to_corner_box3d(
-        rbbox[:, :3], rbbox[:, 3:6], rbbox[:, 6], origin=origin, axis=z_axis)
-    surfaces = corner_to_surfaces_3d(rbbox_corners)
-    indices = points_in_convex_polygon_3d_jit(points[:, :3], surfaces)
+        rbbox[:, :3], rbbox[:, 3:6], rbbox[:, 6], origin=origin, axis=z_axis) # 将中心+长宽高和旋转角的形式转换为8个角点形式
+    surfaces = corner_to_surfaces_3d(rbbox_corners) # 计算角点构成的6个表面
+    indices = points_in_convex_polygon_3d_jit(points[:, :3], surfaces) # 判断点是否在box内
     return indices
 
 
@@ -608,7 +608,16 @@ def iou_jit(boxes, query_boxes, mode='iou', eps=0.0):
 
 def projection_matrix_to_CRT_kitti(proj):
     """Split projection matrix of kitti.
-
+    将投影矩阵P利用QR分解分解出摄像机内外参数
+    输入：
+        P:投影矩阵，3*4
+    输出：
+        K:内参数矩阵，3*3上三角矩阵
+        	fx   s    x0
+	    K = 0    fy   y0
+		    0    0    1
+        R:旋转矩阵,3*3正交矩阵
+        T:平移向量,3*1
     P = C @ [R|T]
     C is upper triangular matrix, so we need to inverse CR and use QR
     stable for all kitti camera projection matrix.
@@ -620,13 +629,13 @@ def projection_matrix_to_CRT_kitti(proj):
         tuple[np.ndarray]: Splited matrix of C, R and T.
     """
 
-    CR = proj[0:3, 0:3]
-    CT = proj[0:3, 3]
-    RinvCinv = np.linalg.inv(CR)
-    Rinv, Cinv = np.linalg.qr(RinvCinv)
-    C = np.linalg.inv(Cinv)
-    R = np.linalg.inv(Rinv)
-    T = Cinv @ CT
+    CR = proj[0:3, 0:3] # 左上角3x3
+    CT = proj[0:3, 3] # 右上角1x3
+    RinvCinv = np.linalg.inv(CR) # 旋转矩阵的逆矩阵
+    Rinv, Cinv = np.linalg.qr(RinvCinv) # 对逆矩阵做QR分解--> Rinv正交矩阵Q,Cinv上三角矩阵R
+    C = np.linalg.inv(Cinv) # 对上三角矩阵取逆
+    R = np.linalg.inv(Rinv) # 对Q矩阵取逆
+    T = Cinv @ CT # @矩阵乘法运算，与dot相同
     return C, R, T
 
 
@@ -646,21 +655,21 @@ def remove_outside_points(points, rect, Trv2c, P2, image_shape):
         np.ndarray, shape=[N, 3+dims]: Filtered points.
     """
     # 5x faster than remove_outside_points_v1(2ms vs 10ms)
-    C, R, T = projection_matrix_to_CRT_kitti(P2)
-    image_bbox = [0, 0, image_shape[1], image_shape[0]]
-    frustum = get_frustum(image_bbox, C)
+    C, R, T = projection_matrix_to_CRT_kitti(P2) # 将投影矩阵分解
+    image_bbox = [0, 0, image_shape[1], image_shape[0]] # 将图像大小转换为box形式，左上角和右下角
+    frustum = get_frustum(image_bbox, C) # 获取归一化相机坐标中的椎体坐标
     frustum -= T
-    frustum = np.linalg.inv(R) @ frustum.T
-    frustum = camera_to_lidar(frustum.T, rect, Trv2c)
-    frustum_surfaces = corner_to_surfaces_3d_jit(frustum[np.newaxis, ...])
-    indices = points_in_convex_polygon_3d_jit(points[:, :3], frustum_surfaces)
-    points = points[indices.reshape([-1])]
+    frustum = np.linalg.inv(R) @ frustum.T # 以上2步将点转化为矫正相机坐标系的坐标
+    frustum = camera_to_lidar(frustum.T, rect, Trv2c) # 将矫正相机坐标系的frustum corners转换到lidar坐标系下 --> [8, 3]
+    frustum_surfaces = corner_to_surfaces_3d_jit(frustum[np.newaxis, ...]) # [1, 8, 3] --> [1, 6, 4, 3]
+    indices = points_in_convex_polygon_3d_jit(points[:, :3], frustum_surfaces) # [num_points, num_polygon]
+    points = points[indices.reshape([-1])] # 取出在box内的点
     return points
 
 
 def get_frustum(bbox_image, C, near_clip=0.001, far_clip=100):
     """Get frustum corners in camera coordinates.
-
+       获取相机坐标系下的锥体坐标
     Args:
         bbox_image (list[int]): box in image coordinates.
         C (np.ndarray): Intrinsics.
@@ -676,13 +685,15 @@ def get_frustum(bbox_image, C, near_clip=0.001, far_clip=100):
     fkv = -C[1, 1]
     u0v0 = C[0:2, 2]
     z_points = np.array(
-        [near_clip] * 4 + [far_clip] * 4, dtype=C.dtype)[:, np.newaxis]
+        [near_clip] * 4 + [far_clip] * 4, dtype=C.dtype)[:, np.newaxis] # [[0.001],[0.001],[0.001],[0.001],[100],[100],[100],[100]]
     b = bbox_image
     box_corners = np.array(
         [[b[0], b[1]], [b[0], b[3]], [b[2], b[3]], [b[2], b[1]]],
-        dtype=C.dtype)
+        dtype=C.dtype) # 组合box的四个角点
     near_box_corners = (box_corners - u0v0) / np.array(
         [fku / near_clip, -fkv / near_clip], dtype=C.dtype)
+    # u = fx*(X/Z) + cx --> X = (u - cx) / (fx / Z)
+    # v = fy*(Y/Z) + cy --> Y = (u - cy) / (fy / Z)
     far_box_corners = (box_corners - u0v0) / np.array(
         [fku / far_clip, -fkv / far_clip], dtype=C.dtype)
     ret_xy = np.concatenate([near_box_corners, far_box_corners],
@@ -693,7 +704,7 @@ def get_frustum(bbox_image, C, near_clip=0.001, far_clip=100):
 
 def surface_equ_3d(polygon_surfaces):
     """
-
+    计算平面的法向量和偏移d
     Args:
         polygon_surfaces (np.ndarray): Polygon surfaces with shape of
             [num_polygon, max_num_surfaces, max_num_points_of_surface, 3].
@@ -701,16 +712,17 @@ def surface_equ_3d(polygon_surfaces):
             Max_num_points_of_surface must at least 3.
 
     Returns:
-        tuple: normal vector and its direction.
+        tuple: normal vector and its offset.
     """
     # return [a, b, c], d in ax+by+cz+d=0
     # polygon_surfaces: [num_polygon, num_surfaces, num_points_of_polygon, 3]
+    # 终点-起点 组成向量 AB和CB
     surface_vec = polygon_surfaces[:, :, :2, :] - \
         polygon_surfaces[:, :, 1:3, :]
-    # normal_vec: [..., 3]
+    # normal_vec: [..., 3]，向量叉乘计算法向量
     normal_vec = np.cross(surface_vec[:, :, 0, :], surface_vec[:, :, 1, :])
     # print(normal_vec.shape, points[..., 0, :].shape)
-    # d = -np.inner(normal_vec, points[..., 0, :])
+    # d = -np.inner(normal_vec, points[..., 0, :]) 两个向量做内积，求平面方程中的d(平移量)
     d = np.einsum('aij, aij->ai', normal_vec, polygon_surfaces[:, :, 0, :])
     return normal_vec, -d
 
@@ -738,6 +750,8 @@ def _points_in_convex_polygon_3d_jit(points, polygon_surfaces, normal_vec, d,
     num_polygons = polygon_surfaces.shape[0]
     ret = np.ones((num_points, num_polygons), dtype=np.bool_)
     sign = 0.0
+    # 逐个点，逐个凸包，逐平面判断
+    # 将点带入平面方程，必须全部小于0，才能表示点在平面内部，与法向量方向相同
     for i in range(num_points):
         for j in range(num_polygons):
             for k in range(max_num_surfaces):
@@ -770,9 +784,9 @@ def points_in_convex_polygon_3d_jit(points,
     Returns:
         np.ndarray: Result matrix with the shape of [num_points, num_polygon].
     """
-    max_num_surfaces, max_num_points_of_surface = polygon_surfaces.shape[1:3]
+    max_num_surfaces, max_num_points_of_surface = polygon_surfaces.shape[1:3] # 凸包体最多有几个面，每个面最多有几个点
     # num_points = points.shape[0]
-    num_polygons = polygon_surfaces.shape[0]
+    num_polygons = polygon_surfaces.shape[0] # 1 有几个凸包体
     if num_surfaces is None:
         num_surfaces = np.full((num_polygons, ), 9999999, dtype=np.int64)
     normal_vec, d = surface_equ_3d(polygon_surfaces[:, :, :3, :])

@@ -97,9 +97,10 @@ class Anchor3DRangeGenerator(object):
         """
         assert self.num_levels == len(featmap_sizes)
         multi_level_anchors = []
+        # 多尺度特征层生成anchor，在second中只有一个特征层
         for i in range(self.num_levels):
             anchors = self.single_level_grid_anchors(
-                featmap_sizes[i], self.scales[i], device=device)
+                featmap_sizes[i], self.scales[i], device=device) # (1, 200, 176, 3, 2, 7)
             if self.reshape_out:
                 anchors = anchors.reshape(-1, anchors.size(-1))
             multi_level_anchors.append(anchors)
@@ -133,6 +134,7 @@ class Anchor3DRangeGenerator(object):
                 device=device)
 
         mr_anchors = []
+        # 逐个类别(size)和范围(range)计算anchor，最后在cat
         for anchor_range, anchor_size in zip(self.ranges, self.sizes):
             mr_anchors.append(
                 self.anchors_single_range(
@@ -142,7 +144,8 @@ class Anchor3DRangeGenerator(object):
                     anchor_size,
                     self.rotations,
                     device=device))
-        mr_anchors = torch.cat(mr_anchors, dim=-3)
+        # 在num_size维度拼接
+        mr_anchors = torch.cat(mr_anchors, dim=-3) # （1, 200, 176, 3, 2, 7）
         return mr_anchors
 
     def anchors_single_range(self,
@@ -171,33 +174,38 @@ class Anchor3DRangeGenerator(object):
             torch.Tensor: Anchors with shape \
                 [*feature_size, num_sizes, num_rots, 7].
         """
+        # 1.求中心和旋转角度
         if len(feature_size) == 2:
-            feature_size = [1, feature_size[0], feature_size[1]]
+            feature_size = [1, feature_size[0], feature_size[1]] # [D, H, W]
         anchor_range = torch.tensor(anchor_range, device=device)
         z_centers = torch.linspace(
-            anchor_range[2], anchor_range[5], feature_size[0], device=device)
+            anchor_range[2], anchor_range[5], feature_size[0], device=device) # 1 --> start，end，step
         y_centers = torch.linspace(
-            anchor_range[1], anchor_range[4], feature_size[1], device=device)
+            anchor_range[1], anchor_range[4], feature_size[1], device=device) # 200
         x_centers = torch.linspace(
-            anchor_range[0], anchor_range[3], feature_size[2], device=device)
-        sizes = torch.tensor(sizes, device=device).reshape(-1, 3) * scale
-        rotations = torch.tensor(rotations, device=device)
+            anchor_range[0], anchor_range[3], feature_size[2], device=device) # 176
+        sizes = torch.tensor(sizes, device=device).reshape(-1, 3) * scale # (1, 3)
+        rotations = torch.tensor(rotations, device=device) # 2
 
         # torch.meshgrid default behavior is 'id', np's default is 'xy'
-        rets = torch.meshgrid(x_centers, y_centers, z_centers, rotations)
+        rets = torch.meshgrid(x_centers, y_centers, z_centers, rotations) # 返回4个tensor --> (176,200,1,2)
         # torch.meshgrid returns a tuple rather than list
         rets = list(rets)
-        tile_shape = [1] * 5
-        tile_shape[-2] = int(sizes.shape[0])
+        tile_shape = [1] * 5 # (1,1,1,1,1)
+        tile_shape[-2] = int(sizes.shape[0]) # 1 --> (1,1,1,1,1)
+        # (176, 200, 1, 2) --> (176, 200, 1, 1, 2) --> (176, 200, 1, 1, 2, 1)
         for i in range(len(rets)):
             rets[i] = rets[i].unsqueeze(-2).repeat(tile_shape).unsqueeze(-1)
-
-        sizes = sizes.reshape([1, 1, 1, -1, 1, 3])
-        tile_size_shape = list(rets[0].shape)
+        
+        # 2.求大小
+        sizes = sizes.reshape([1, 1, 1, -1, 1, 3]) # (1, 1, 1, 1, 1, 3)
+        tile_size_shape = list(rets[0].shape) # (176, 200, 1, 1, 2, 1)
         tile_size_shape[3] = 1
-        sizes = sizes.repeat(tile_size_shape)
-        rets.insert(3, sizes)
-
+        sizes = sizes.repeat(tile_size_shape) # (176, 200, 1, 1, 2, 3)
+        rets.insert(3, sizes) # rets有四个tensor，下标为3的位置为size-->(176, 200, 1, 1, 2, 3)
+        
+        # 3.拼接，调整维度 
+        # (176, 200, 1, 1, 2, 7) --> (1, 200, 176, 1, 2, 7)
         ret = torch.cat(rets, dim=-1).permute([2, 1, 0, 3, 4, 5])
         # [1, 200, 176, N, 2, 7] for kitti after permute
 

@@ -83,9 +83,12 @@ class SECONDFPN(BaseModule):
         """
         assert len(x) == len(self.in_channels)
         ups = [deblock(x[i]) for i, deblock in enumerate(self.deblocks)]
-
+        # up存在两个输出
+        # (2, 256, 200, 176)
+        # (2, 256, 200, 176)
+        # 将输出在通道维度拼接
         if len(ups) > 1:
-            out = torch.cat(ups, dim=1)
+            out = torch.cat(ups, dim=1) # (2, 512, 200, 176)
         else:
             out = ups[0]
         return [out]

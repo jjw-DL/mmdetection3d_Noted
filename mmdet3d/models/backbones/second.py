@@ -46,7 +46,7 @@ class SECOND(BaseModule):
                     3,
                     stride=layer_strides[i],
                     padding=1),
-                build_norm_layer(norm_cfg, out_channels[i])[1],
+                build_norm_layer(norm_cfg, out_channels[i])[1], # 这里取1的原因是返回值有两个一个是name，一个是layer
                 nn.ReLU(inplace=True),
             ]
             for j in range(layer_num):
@@ -78,12 +78,14 @@ class SECOND(BaseModule):
         """Forward function.
 
         Args:
-            x (torch.Tensor): Input with shape (N, C, H, W).
+            x (torch.Tensor): Input with shape (N, C, H, W). (2, 256, 200, 176)
 
         Returns:
             tuple[torch.Tensor]: Multi-scale features.
         """
         outs = []
+        # (2, 128, 200, 176)
+        # (2，256, 100, 88）
         for i in range(len(self.blocks)):
             x = self.blocks[i](x)
             outs.append(x)

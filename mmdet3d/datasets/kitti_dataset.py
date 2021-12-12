@@ -111,18 +111,20 @@ class KittiDataset(Custom3DDataset):
                     from lidar to different cameras.
                 - ann_info (dict): Annotation info.
         """
-        info = self.data_infos[index]
-        sample_idx = info['image']['image_idx']
+        info = self.data_infos[index] # mmcv.load(ann_file)获取
+        sample_idx = info['image']['image_idx'] # 采样id
         img_filename = os.path.join(self.data_root,
-                                    info['image']['image_path'])
+                                    info['image']['image_path']) # 图片路径名
 
         # TODO: consider use torch.Tensor only
+        # 加载标定数据
         rect = info['calib']['R0_rect'].astype(np.float32)
         Trv2c = info['calib']['Tr_velo_to_cam'].astype(np.float32)
         P2 = info['calib']['P2'].astype(np.float32)
         lidar2img = P2 @ rect @ Trv2c
 
-        pts_filename = self._get_pts_filename(sample_idx)
+        pts_filename = self._get_pts_filename(sample_idx) # 根据index获取点云文件名称
+
         input_dict = dict(
             sample_idx=sample_idx,
             pts_filename=pts_filename,
@@ -130,6 +132,7 @@ class KittiDataset(Custom3DDataset):
             img_info=dict(filename=img_filename),
             lidar2img=lidar2img)
 
+        # 如果在训练模式下，将标注信息加入input_dict中
         if not self.test_mode:
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
@@ -187,10 +190,11 @@ class KittiDataset(Custom3DDataset):
 
         anns_results = dict(
             gt_bboxes_3d=gt_bboxes_3d,
-            gt_labels_3d=gt_labels_3d,
-            bboxes=gt_bboxes,
+            gt_labels_3d=gt_labels_3d, # box3d
+            bboxes=gt_bboxes, # bbox
             labels=gt_labels,
             gt_names=gt_names)
+        
         return anns_results
 
     def drop_arrays_by_name(self, gt_names, used_classes):

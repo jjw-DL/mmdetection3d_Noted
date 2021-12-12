@@ -22,7 +22,7 @@ class HardSimpleVFE(nn.Module):
 
     def __init__(self, num_features=4):
         super(HardSimpleVFE, self).__init__()
-        self.num_features = num_features
+        self.num_features = num_features # 4
         self.fp16_enabled = False
 
     @force_fp32(out_fp16=True)
@@ -41,8 +41,8 @@ class HardSimpleVFE(nn.Module):
             torch.Tensor: Mean of points inside each voxel in shape (N, 3(4))
         """
         points_mean = features[:, :, :self.num_features].sum(
-            dim=1, keepdim=False) / num_points.type_as(features).view(-1, 1)
-        return points_mean.contiguous()
+            dim=1, keepdim=False) / num_points.type_as(features).view(-1, 1) # 在voxel维度求和 / voxel内的点数
+        return points_mean.contiguous() # (32000, 4)
 
 
 @VOXEL_ENCODERS.register_module()

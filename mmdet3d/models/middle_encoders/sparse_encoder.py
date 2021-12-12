@@ -43,20 +43,21 @@ class SparseEncoder(nn.Module):
                  block_type='conv_module'):
         super().__init__()
         assert block_type in ['conv_module', 'basicblock']
-        self.sparse_shape = sparse_shape
-        self.in_channels = in_channels
-        self.order = order
-        self.base_channels = base_channels
-        self.output_channels = output_channels
-        self.encoder_channels = encoder_channels
-        self.encoder_paddings = encoder_paddings
-        self.stage_num = len(self.encoder_channels)
+        self.sparse_shape = sparse_shape # [41, 1600, 1408]
+        self.in_channels = in_channels # 4
+        self.order = order # ('conv', 'norm', 'act')
+        self.base_channels = base_channels # 16
+        self.output_channels = output_channels # 128
+        self.encoder_channels = encoder_channels # ((16, ), (32, 32, 32), (64, 64, 64), (64, 64, 64))
+        self.encoder_paddings = encoder_paddings # ((1, ), (1, 1, 1), (1, 1, 1), ((0, 1, 1), 1, 1))
+        self.stage_num = len(self.encoder_channels) # 4
         self.fp16_enabled = False
         # Spconv init all weight on its own
 
         assert isinstance(order, tuple) and len(order) == 3
         assert set(order) == {'conv', 'norm', 'act'}
 
+        # 初始Stage:voxle encoder进入3D卷积的第一阶段
         if self.order[0] != 'conv':  # pre activate
             self.conv_input = make_sparse_convmodule(
                 in_channels,
@@ -67,7 +68,7 @@ class SparseEncoder(nn.Module):
                 indice_key='subm1',
                 conv_type='SubMConv3d',
                 order=('conv', ))
-        else:  # post activate
+        else:  # post activate 初始化
             self.conv_input = make_sparse_convmodule(
                 in_channels,
                 self.base_channels,
@@ -77,12 +78,15 @@ class SparseEncoder(nn.Module):
                 indice_key='subm1',
                 conv_type='SubMConv3d')
 
+        # 中间stage:[1600, 1408, 41] -> [800, 704, 21] -> [400, 352, 11] -> [200, 176, 5]
+        #                   16       ->       32       ->      64       ->      64
         encoder_out_channels = self.make_encoder_layers(
             make_sparse_convmodule,
             norm_cfg,
             self.base_channels,
             block_type=block_type)
 
+        # 最后stage:[200, 176, 5] -> [200, 176, 2]
         self.conv_out = make_sparse_convmodule(
             encoder_out_channels,
             self.output_channels,
@@ -107,23 +111,28 @@ class SparseEncoder(nn.Module):
             dict: Backbone features.
         """
         coors = coors.int()
+        # 对输入voxle特征进行稀疏编码，转化为稀疏tensor
         input_sp_tensor = spconv.SparseConvTensor(voxel_features, coors,
                                                   self.sparse_shape,
                                                   batch_size)
-        x = self.conv_input(input_sp_tensor)
+        x = self.conv_input(input_sp_tensor) # 对输入的稀疏tensor进行编码，16（41, 1600, 1408）
 
         encode_features = []
         for encoder_layer in self.encoder_layers:
+            #（2, 16, 41, 1600, 1408）
+            # (2, 32, 41, 800, 704)
+            # (2, 64, 11, 400, 352)
+            # (2, 64, 5, 200, 176)
             x = encoder_layer(x)
             encode_features.append(x)
 
         # for detection head
-        # [200, 176, 5] -> [200, 176, 2]
+        # [2, 64, 5, 200, 176] -> [2, 128, 2, 200, 176]
         out = self.conv_out(encode_features[-1])
         spatial_features = out.dense()
 
-        N, C, D, H, W = spatial_features.shape
-        spatial_features = spatial_features.view(N, C * D, H, W)
+        N, C, D, H, W = spatial_features.shape # 2, 128, 2, 200, 176
+        spatial_features = spatial_features.view(N, C * D, H, W) # (2, 256, 200, 176)
 
         return spatial_features
 
@@ -167,6 +176,7 @@ class SparseEncoder(nn.Module):
                             padding=padding,
                             indice_key=f'spconv{i + 1}',
                             conv_type='SparseConv3d'))
+                # 在每个stage的中间阶段如果采用SparseConv3d，则进入该判断,在second中没有用到
                 elif block_type == 'basicblock':
                     if j == len(blocks) - 1 and i != len(
                             self.encoder_channels) - 1:
@@ -181,6 +191,7 @@ class SparseEncoder(nn.Module):
                                 indice_key=f'spconv{i + 1}',
                                 conv_type='SparseConv3d'))
                     else:
+                        # 反卷积会进入该stage
                         blocks_list.append(
                             SparseBasicBlock(
                                 out_channels,

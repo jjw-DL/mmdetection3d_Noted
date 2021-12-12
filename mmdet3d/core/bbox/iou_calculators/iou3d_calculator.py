@@ -122,9 +122,9 @@ def bbox_overlaps_nearest_3d(bboxes1,
             ``False``, return shape is M.
     """
     assert bboxes1.size(-1) == bboxes2.size(-1) >= 7
-
+    # 获取box类型
     box_type, _ = get_box_type(coordinate)
-
+    # 根据box类型，将box和anchor转换为对应box类型：LiDARInstance3DBoxes
     bboxes1 = box_type(bboxes1, box_dim=bboxes1.shape[-1])
     bboxes2 = box_type(bboxes2, box_dim=bboxes2.shape[-1])
 

@@ -145,10 +145,13 @@ def create_groundtruth_database(dataset_class_name,
     dataset_cfg = dict(
         type=dataset_class_name, data_root=data_path, ann_file=info_path)
     if dataset_class_name == 'KittiDataset':
+        # 定义文件客户端
         file_client_args = dict(backend='disk')
+        # 更新配置文件信息
         dataset_cfg.update(
             test_mode=False,
             split='training',
+            # 模态信息
             modality=dict(
                 use_lidar=True,
                 use_depth=False,
@@ -156,12 +159,14 @@ def create_groundtruth_database(dataset_class_name,
                 use_camera=with_mask,
             ),
             pipeline=[
+                # 加载点云
                 dict(
                     type='LoadPointsFromFile',
                     coord_type='LIDAR',
                     load_dim=4,
                     use_dim=4,
                     file_client_args=file_client_args),
+                # 加载标注信息
                 dict(
                     type='LoadAnnotations3D',
                     with_bbox_3d=True,
@@ -215,33 +220,43 @@ def create_groundtruth_database(dataset_class_name,
                     file_client_args=file_client_args)
             ])
 
+    # 根据配置文件构建数据集
     dataset = build_dataset(dataset_cfg)
-
+    # 点云数据存储路径（文件夹）
     if database_save_path is None:
         database_save_path = osp.join(data_path, f'{info_prefix}_gt_database')
+    # infos存储路径（文件）
     if db_info_save_path is None:
         db_info_save_path = osp.join(data_path,
                                      f'{info_prefix}_dbinfos_train.pkl')
+    # 创建文件夹
     mmcv.mkdir_or_exist(database_save_path)
+    # 初始db_infos字典
     all_db_infos = dict()
+    
     if with_mask:
+        # 根据json文件路径构建COCO对象
         coco = COCO(osp.join(data_path, mask_anno_path))
+        # 获取图片id
         imgIds = coco.getImgIds()
         file2id = dict()
         for i in imgIds:
-            info = coco.loadImgs([i])[0]
-            file2id.update({info['file_name']: i})
+            info = coco.loadImgs([i])[0] # 根据id读取信息
+            file2id.update({info['file_name']: i}) # 将id和文件名对应上
 
     group_counter = 0
+    # 逐帧处理
     for j in track_iter_progress(list(range(len(dataset)))):
+        # 根据id读取infos信息
         input_dict = dataset.get_data_info(j)
-        dataset.pre_pipeline(input_dict)
-        example = dataset.pipeline(input_dict)
+        dataset.pre_pipeline(input_dict) # 在input_dict中加入pre_pipeline的fild信息
+        example = dataset.pipeline(input_dict) # 将数据送入pipeline处理
         annos = example['ann_info']
         image_idx = example['sample_idx']
         points = example['points'].tensor.numpy()
         gt_boxes_3d = annos['gt_bboxes_3d'].tensor.numpy()
         names = annos['gt_names']
+        # 初始化一帧点云中的group_id,包含全部object
         group_dict = dict()
         if 'group_ids' in annos:
             group_ids = annos['group_ids']
@@ -252,6 +267,7 @@ def create_groundtruth_database(dataset_class_name,
             difficulty = annos['difficulty']
 
         num_obj = gt_boxes_3d.shape[0]
+        # 获取3D gt box内的点云索引 Indices of points in each box
         point_indices = box_np_ops.points_in_rbbox(points, gt_boxes_3d)
 
         if with_mask:
@@ -284,15 +300,16 @@ def create_groundtruth_database(dataset_class_name,
             #     torch.Tensor(mask_inds).long(), object_img_patches)
             object_img_patches, object_masks = crop_image_patch(
                 gt_boxes, gt_masks, mask_inds, annos['img'])
-
+        # 逐个box处理
         for i in range(num_obj):
+            # 图片id+类名+个数.bin
             filename = f'{image_idx}_{names[i]}_{i}.bin'
-            abs_filepath = osp.join(database_save_path, filename)
-            rel_filepath = osp.join(f'{info_prefix}_gt_database', filename)
+            abs_filepath = osp.join(database_save_path, filename) # 绝对路径
+            rel_filepath = osp.join(f'{info_prefix}_gt_database', filename) # 相对路径
 
             # save point clouds and image patches for each object
-            gt_points = points[point_indices[:, i]]
-            gt_points[:, :3] -= gt_boxes_3d[i, :3]
+            gt_points = points[point_indices[:, i]] # 截取图片椎体内点云
+            gt_points[:, :3] -= gt_boxes_3d[i, :3] # 截取gt box内的点云
 
             if with_mask:
                 if object_masks[i].sum() == 0 or not valid_inds[i]:
@@ -304,8 +321,9 @@ def create_groundtruth_database(dataset_class_name,
                 mmcv.imwrite(object_masks[i], mask_patch_path)
 
             with open(abs_filepath, 'w') as f:
-                gt_points.tofile(f)
+                gt_points.tofile(f) # 将点云写入文件
 
+            # 将类别信息写入
             if (used_classes is None) or names[i] in used_classes:
                 db_info = {
                     'name': names[i],
@@ -316,6 +334,7 @@ def create_groundtruth_database(dataset_class_name,
                     'num_points_in_gt': gt_points.shape[0],
                     'difficulty': difficulty[i],
                 }
+                # local group的id
                 local_group_id = group_ids[i]
                 # if local_group_id >= 0:
                 if local_group_id not in group_dict:
@@ -330,9 +349,9 @@ def create_groundtruth_database(dataset_class_name,
                     all_db_infos[names[i]].append(db_info)
                 else:
                     all_db_infos[names[i]] = [db_info]
-
+    # 加载database infos信息
     for k, v in all_db_infos.items():
         print(f'load {len(v)} {k} database infos')
-
+    # 将all_db_infos写入文件
     with open(db_info_save_path, 'wb') as f:
         pickle.dump(all_db_infos, f)

@@ -32,34 +32,36 @@ def apply_3d_transformation(pcd, coord_type, img_meta, reverse=False):
     pcd_rotate_mat = (
         torch.tensor(img_meta['pcd_rotation'], dtype=dtype, device=device)
         if 'pcd_rotation' in img_meta else torch.eye(
-            3, dtype=dtype, device=device))
+            3, dtype=dtype, device=device)) # 获取点云的旋转矩阵 
 
     pcd_scale_factor = (
-        img_meta['pcd_scale_factor'] if 'pcd_scale_factor' in img_meta else 1.)
+        img_meta['pcd_scale_factor'] if 'pcd_scale_factor' in img_meta else 1.) # 获取点云缩放尺度 1.0234936
 
     pcd_trans_factor = (
         torch.tensor(img_meta['pcd_trans'], dtype=dtype, device=device)
         if 'pcd_trans' in img_meta else torch.zeros(
-            (3), dtype=dtype, device=device))
+            (3), dtype=dtype, device=device)) # 获取点云平移因子 [0.4392, 0.2236, -0.1190]
 
     pcd_horizontal_flip = img_meta[
         'pcd_horizontal_flip'] if 'pcd_horizontal_flip' in \
-        img_meta else False
+        img_meta else False # 获取点云的水平翻转 False
 
     pcd_vertical_flip = img_meta[
         'pcd_vertical_flip'] if 'pcd_vertical_flip' in \
-        img_meta else False
+        img_meta else False # 获取点云垂直翻转 False
 
     flow = img_meta['transformation_3d_flow'] \
-        if 'transformation_3d_flow' in img_meta else []
+        if 'transformation_3d_flow' in img_meta else [] # 获取点云变换流 flow:['R', 'S', 'T']
 
     pcd = pcd.clone()  # prevent inplace modification
-    pcd = get_points_type(coord_type)(pcd)
+    pcd = get_points_type(coord_type)(pcd) # 构造LIDAR点类型
 
+    # 进行水平和垂直翻转
     horizontal_flip_func = partial(pcd.flip, bev_direction='horizontal') \
         if pcd_horizontal_flip else lambda: None
     vertical_flip_func = partial(pcd.flip, bev_direction='vertical') \
         if pcd_vertical_flip else lambda: None
+    # 进行逆变换
     if reverse:
         scale_func = partial(pcd.scale, scale_factor=1.0 / pcd_scale_factor)
         translate_func = partial(pcd.translate, trans_vector=-pcd_trans_factor)

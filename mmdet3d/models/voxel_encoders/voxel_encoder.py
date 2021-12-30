@@ -127,7 +127,7 @@ class DynamicVFE(nn.Module):
                  fusion_layer=None,
                  return_point_feats=False):
         super(DynamicVFE, self).__init__()
-        assert mode in ['avg', 'max']
+        assert mode in ['avg', 'max'] # max
         assert len(feat_channels) > 0
         if with_cluster_center:
             in_channels += 3
@@ -135,24 +135,24 @@ class DynamicVFE(nn.Module):
             in_channels += 3
         if with_distance:
             in_channels += 1
-        self.in_channels = in_channels
-        self._with_distance = with_distance
-        self._with_cluster_center = with_cluster_center
-        self._with_voxel_center = with_voxel_center
-        self.return_point_feats = return_point_feats
+        self.in_channels = in_channels # 4 + 3 + 3 = 10
+        self._with_distance = with_distance # False
+        self._with_cluster_center = with_cluster_center # True
+        self._with_voxel_center = with_voxel_center # True
+        self.return_point_feats = return_point_feats # False
         self.fp16_enabled = False
 
         # Need pillar (voxel) size and x/y offset in order to calculate offset
-        self.vx = voxel_size[0]
-        self.vy = voxel_size[1]
-        self.vz = voxel_size[2]
-        self.x_offset = self.vx / 2 + point_cloud_range[0]
-        self.y_offset = self.vy / 2 + point_cloud_range[1]
-        self.z_offset = self.vz / 2 + point_cloud_range[2]
-        self.point_cloud_range = point_cloud_range
+        self.vx = voxel_size[0] # 0.05
+        self.vy = voxel_size[1] # 0.05
+        self.vz = voxel_size[2] # 0.1
+        self.x_offset = self.vx / 2 + point_cloud_range[0] # 0.025
+        self.y_offset = self.vy / 2 + point_cloud_range[1] # -39.975
+        self.z_offset = self.vz / 2 + point_cloud_range[2] # -2.95
+        self.point_cloud_range = point_cloud_range # (0, -40, -3, 70.4, 40, 1)
         self.scatter = DynamicScatter(voxel_size, point_cloud_range, True)
 
-        feat_channels = [self.in_channels] + list(feat_channels)
+        feat_channels = [self.in_channels] + list(feat_channels) # [10, 64, 64]
         vfe_layers = []
         for i in range(len(feat_channels) - 1):
             in_filters = feat_channels[i]
@@ -188,32 +188,33 @@ class DynamicVFE(nn.Module):
         # Step 1: scatter voxel into canvas
         # Calculate necessary things for canvas creation
         canvas_z = int(
-            (self.point_cloud_range[5] - self.point_cloud_range[2]) / self.vz)
+            (self.point_cloud_range[5] - self.point_cloud_range[2]) / self.vz) # 40
         canvas_y = int(
-            (self.point_cloud_range[4] - self.point_cloud_range[1]) / self.vy)
+            (self.point_cloud_range[4] - self.point_cloud_range[1]) / self.vy) # 1600
         canvas_x = int(
-            (self.point_cloud_range[3] - self.point_cloud_range[0]) / self.vx)
+            (self.point_cloud_range[3] - self.point_cloud_range[0]) / self.vx) # 1408
         # canvas_channel = voxel_mean.size(1)
-        batch_size = pts_coors[-1, 0] + 1
-        canvas_len = canvas_z * canvas_y * canvas_x * batch_size
+        batch_size = pts_coors[-1, 0] + 1 # 1
+        canvas_len = canvas_z * canvas_y * canvas_x * batch_size # 90112000
         # Create the canvas for this sample
-        canvas = voxel_mean.new_zeros(canvas_len, dtype=torch.long)
-        # Only include non-empty pillars
+        canvas = voxel_mean.new_zeros(canvas_len, dtype=torch.long) #(90112000,)
+        # Only include non-empty pillars 计算非空voxle的索引
         indices = (
             voxel_coors[:, 0] * canvas_z * canvas_y * canvas_x +
             voxel_coors[:, 1] * canvas_y * canvas_x +
-            voxel_coors[:, 2] * canvas_x + voxel_coors[:, 3])
-        # Scatter the blob back to the canvas
+            voxel_coors[:, 2] * canvas_x + voxel_coors[:, 3]) # (16160,) 有效体素索引
+        # Scatter the blob back to the canvas 在对应体素索引处设置索引，类似hash过程
         canvas[indices.long()] = torch.arange(
-            start=0, end=voxel_mean.size(0), device=voxel_mean.device)
+            start=0, end=voxel_mean.size(0), device=voxel_mean.device) # 在canvas的有效体素索引处记录线性索引
 
         # Step 2: get voxel mean for each point
         voxel_index = (
             pts_coors[:, 0] * canvas_z * canvas_y * canvas_x +
             pts_coors[:, 1] * canvas_y * canvas_x +
-            pts_coors[:, 2] * canvas_x + pts_coors[:, 3])
-        voxel_inds = canvas[voxel_index.long()]
-        center_per_point = voxel_mean[voxel_inds, ...]
+            pts_coors[:, 2] * canvas_x + pts_coors[:, 3]) # (19221,) 这里的pts_coors在voxle过程中存在重复
+        # 根据voxle_index利用canvas做桥梁，建立pts_coors和voxel_coors之间的关系
+        voxel_inds = canvas[voxel_index.long()] # 0和其他
+        center_per_point = voxel_mean[voxel_inds, ...] # (19221, 4)
         return center_per_point
 
     @force_fp32(out_fp16=True)
@@ -224,7 +225,7 @@ class DynamicVFE(nn.Module):
                 img_feats=None,
                 img_metas=None):
         """Forward functions.
-
+           
         Args:
             features (torch.Tensor): Features of voxels, shape is NxC.
             coors (torch.Tensor): Coordinates of voxels, shape is  Nx(1+NDim).
@@ -242,18 +243,18 @@ class DynamicVFE(nn.Module):
         features_ls = [features]
         # Find distance of x, y, and z from cluster center
         if self._with_cluster_center:
-            voxel_mean, mean_coors = self.cluster_scatter(features, coors)
+            voxel_mean, mean_coors = self.cluster_scatter(features, coors) # 计算包含点的有效voxel的平均值及其坐标 （16160， 4）
             points_mean = self.map_voxel_center_to_point(
-                coors, voxel_mean, mean_coors)
+                coors, voxel_mean, mean_coors) # 计算每个点所属的voxel_mean值(这里第一个参数是coors，表示每个点的voxle坐标)-->(19221, 4)
             # TODO: maybe also do cluster for reflectivity
-            f_cluster = features[:, :3] - points_mean[:, :3]
+            f_cluster = features[:, :3] - points_mean[:, :3] # 将每个点的特征减去所属voxle的mean值
             features_ls.append(f_cluster)
 
         # Find distance of x, y, and z from pillar center
         if self._with_voxel_center:
-            f_center = features.new_zeros(size=(features.size(0), 3))
+            f_center = features.new_zeros(size=(features.size(0), 3)) # (19221, 3) 这里的features是点的实际坐标，不是体素坐标
             f_center[:, 0] = features[:, 0] - (
-                coors[:, 3].type_as(features) * self.vx + self.x_offset)
+                coors[:, 3].type_as(features) * self.vx + self.x_offset) # 体素坐标coors乘以voxle大小+偏移
             f_center[:, 1] = features[:, 1] - (
                 coors[:, 2].type_as(features) * self.vy + self.y_offset)
             f_center[:, 2] = features[:, 2] - (
@@ -267,17 +268,17 @@ class DynamicVFE(nn.Module):
         # Combine together feature decorations
         features = torch.cat(features_ls, dim=-1)
         for i, vfe in enumerate(self.vfe_layers):
-            point_feats = vfe(features)
+            point_feats = vfe(features) # 10 --> 64 128 -- > 64 # (19221, 64)
             if (i == len(self.vfe_layers) - 1 and self.fusion_layer is not None
                     and img_feats is not None):
                 point_feats = self.fusion_layer(img_feats, points, point_feats,
-                                                img_metas)
-            voxel_feats, voxel_coors = self.vfe_scatter(point_feats, coors)
+                                                img_metas) # 融合后的点云特征 --> (19221, 128)
+            voxel_feats, voxel_coors = self.vfe_scatter(point_feats, coors) # (16160, 128), (16160, 4)
             if i != len(self.vfe_layers) - 1:
                 # need to concat voxel feats if it is not the last vfe
                 feat_per_point = self.map_voxel_center_to_point(
                     coors, voxel_feats, voxel_coors)
-                features = torch.cat([point_feats, feat_per_point], dim=1)
+                features = torch.cat([point_feats, feat_per_point], dim=1) # (19221, 128)
 
         if self.return_point_feats:
             return point_feats

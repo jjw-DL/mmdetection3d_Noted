@@ -361,18 +361,18 @@ class LoadPointsFromFile(object):
                  shift_height=False,
                  use_color=False,
                  file_client_args=dict(backend='disk')):
-        self.shift_height = shift_height
-        self.use_color = use_color
+        self.shift_height = shift_height # False
+        self.use_color = use_color # Fasle
         if isinstance(use_dim, int):
-            use_dim = list(range(use_dim))
+            use_dim = list(range(use_dim)) # [0, 1, 2, 3]
         assert max(use_dim) < load_dim, \
             f'Expect all used dimensions < {load_dim}, got {use_dim}'
         assert coord_type in ['CAMERA', 'LIDAR', 'DEPTH']
 
-        self.coord_type = coord_type
-        self.load_dim = load_dim
-        self.use_dim = use_dim
-        self.file_client_args = file_client_args.copy()
+        self.coord_type = coord_type # LIDAR
+        self.load_dim = load_dim # 4
+        self.use_dim = use_dim # [0, 1, 2, 3]
+        self.file_client_args = file_client_args.copy() # {'backend': 'disk'}
         self.file_client = None
 
     def _load_points(self, pts_filename):
@@ -414,12 +414,13 @@ class LoadPointsFromFile(object):
 
                 - points (:obj:`BasePoints`): Point clouds data.
         """
-        pts_filename = results['pts_filename'] # 读取文件名称
-        points = self._load_points(pts_filename) # 加载点云为1d的numpy array形式
-        points = points.reshape(-1, self.load_dim) # reshape
+        pts_filename = results['pts_filename'] # 读取文件名称-->'../data/kitti/training/image_2/003832.bin'
+        points = self._load_points(pts_filename) # 加载点云为1d的numpy array形式 (67736,)
+        points = points.reshape(-1, self.load_dim) # reshape--> (16934,4)
         points = points[:, self.use_dim] # 取出要使用的点云维度
         attribute_dims = None
 
+        # 如果要变换高度，则进入下面流程
         if self.shift_height:
             floor_height = np.percentile(points[:, 2], 0.99) # 认为地面高度为小于99%的点
             height = points[:, 2] - floor_height # 重新计算高度
@@ -429,6 +430,7 @@ class LoadPointsFromFile(object):
                  np.expand_dims(height, 1), points[:, 3:]], 1)
             attribute_dims = dict(height=3)
 
+        # 如果要使用颜色信息，则进入下面流程
         if self.use_color:
             assert len(self.use_dim) >= 6
             if attribute_dims is None:
@@ -441,11 +443,11 @@ class LoadPointsFromFile(object):
                     points.shape[1] - 1,
                 ]))
 
-        points_class = get_points_type(self.coord_type) # 根据坐标类型获取点云类型
+        points_class = get_points_type(self.coord_type) # 根据坐标类型获取点云类型--> LiDARPoints
         # 构造点的类
         points = points_class(
             points, points_dim=points.shape[-1], attribute_dims=attribute_dims)
-        results['points'] = points
+        results['points'] = points # 将点云信息加入result的'points'字段
 
         return results
 
@@ -518,12 +520,12 @@ class LoadAnnotations3D(LoadAnnotations):
             with_seg,
             poly2mask,
             file_client_args=file_client_args)
-        self.with_bbox_3d = with_bbox_3d
-        self.with_bbox_depth = with_bbox_depth
-        self.with_label_3d = with_label_3d
-        self.with_attr_label = with_attr_label
-        self.with_mask_3d = with_mask_3d
-        self.with_seg_3d = with_seg_3d
+        self.with_bbox_3d = with_bbox_3d # True
+        self.with_bbox_depth = with_bbox_depth # False
+        self.with_label_3d = with_label_3d # True
+        self.with_attr_label = with_attr_label # False
+        self.with_mask_3d = with_mask_3d # False
+        self.with_seg_3d = with_seg_3d # False
         self.seg_3d_dtype = seg_3d_dtype
 
     def _load_bboxes_3d(self, results):
@@ -535,8 +537,8 @@ class LoadAnnotations3D(LoadAnnotations):
         Returns:
             dict: The dict containing loaded 3D bounding box annotations.
         """
-        results['gt_bboxes_3d'] = results['ann_info']['gt_bboxes_3d']
-        results['bbox3d_fields'].append('gt_bboxes_3d')
+        results['gt_bboxes_3d'] = results['ann_info']['gt_bboxes_3d'] # 增加gt_bboxes_3d字段，并将'ann_info'信息写入'gt_bboxes_3d'
+        results['bbox3d_fields'].append('gt_bboxes_3d') # 在bbox3d_fields中加入'gt_bboxes_3d'字符串
         return results
 
     def _load_bboxes_depth(self, results):
@@ -561,7 +563,7 @@ class LoadAnnotations3D(LoadAnnotations):
         Returns:
             dict: The dict containing loaded label annotations.
         """
-        results['gt_labels_3d'] = results['ann_info']['gt_labels_3d']
+        results['gt_labels_3d'] = results['ann_info']['gt_labels_3d'] # 增加gt_labels_3d字段，并将'ann_info'信息写入'gt_labels_3d'
         return results
 
     def _load_attr_labels(self, results):

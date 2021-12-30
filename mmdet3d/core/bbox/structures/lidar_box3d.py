@@ -134,6 +134,7 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
         assert angle.shape == torch.Size([3, 3]) or angle.numel() == 1, \
             f'invalid rotation angle shape {angle.shape}'
 
+        # 根据旋转角度构造旋转矩阵
         if angle.numel() == 1:
             rot_sin = torch.sin(angle)
             rot_cos = torch.cos(angle)
@@ -146,8 +147,8 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
             rot_cos = rot_mat_T[0, 0]
             angle = np.arctan2(rot_sin, rot_cos)
 
-        self.tensor[:, :3] = self.tensor[:, :3] @ rot_mat_T
-        self.tensor[:, 6] += angle
+        self.tensor[:, :3] = self.tensor[:, :3] @ rot_mat_T # 旋转box的x，y和z
+        self.tensor[:, 6] += angle # 将box的最后角度加上angle
 
         if self.tensor.shape[1] == 9:
             # rotate velo vector
@@ -161,7 +162,7 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
                 points[:, :3] = np.dot(points[:, :3], rot_mat_T)
             elif isinstance(points, BasePoints):
                 # clockwise
-                points.rotate(-angle)
+                points.rotate(-angle) # 将points旋转(16934,4)
             else:
                 raise ValueError
             return points, rot_mat_T
@@ -181,9 +182,9 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
         """
         assert bev_direction in ('horizontal', 'vertical')
         if bev_direction == 'horizontal':
-            self.tensor[:, 1::7] = -self.tensor[:, 1::7]
+            self.tensor[:, 1::7] = -self.tensor[:, 1::7] # x轴坐标变相反数
             if self.with_yaw:
-                self.tensor[:, 6] = -self.tensor[:, 6] + np.pi
+                self.tensor[:, 6] = -self.tensor[:, 6] + np.pi # 航向角变相反数+pi
         elif bev_direction == 'vertical':
             self.tensor[:, 0::7] = -self.tensor[:, 0::7]
             if self.with_yaw:
@@ -219,7 +220,7 @@ class LiDARInstance3DBoxes(BaseInstance3DBoxes):
                           & (self.tensor[:, 1] > box_range[1])
                           & (self.tensor[:, 0] < box_range[2])
                           & (self.tensor[:, 1] < box_range[3]))
-        return in_range_flags
+        return in_range_flags # (4,) 
 
     def convert_to(self, dst, rt_mat=None):
         """Convert self to ``dst`` mode.

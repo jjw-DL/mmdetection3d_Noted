@@ -89,8 +89,8 @@ class RandomFlip3D(RandomFlip):
                  **kwargs):
         super(RandomFlip3D, self).__init__(
             flip_ratio=flip_ratio_bev_horizontal, **kwargs)
-        self.sync_2d = sync_2d
-        self.flip_ratio_bev_vertical = flip_ratio_bev_vertical
+        self.sync_2d = sync_2d # 'True'
+        self.flip_ratio_bev_vertical = flip_ratio_bev_vertical # 0.0
         if flip_ratio_bev_horizontal is not None:
             assert isinstance(
                 flip_ratio_bev_horizontal,
@@ -169,7 +169,7 @@ class RandomFlip3D(RandomFlip):
 
         if input_dict['pcd_horizontal_flip']:
             self.random_flip_data_3d(input_dict, 'horizontal')
-            input_dict['transformation_3d_flow'].extend(['HF'])
+            input_dict['transformation_3d_flow'].extend(['HF']) # 在transformation_3d_flow字段中添加'HF'
         if input_dict['pcd_vertical_flip']:
             self.random_flip_data_3d(input_dict, 'vertical')
             input_dict['transformation_3d_flow'].extend(['VF'])
@@ -535,11 +535,11 @@ class GlobalRotScaleTrans(object):
             assert isinstance(rot_range, (int, float)), \
                 f'unsupported rot_range type {type(rot_range)}'
             rot_range = [-rot_range, rot_range]
-        self.rot_range = rot_range
+        self.rot_range = rot_range # [-0.78539816, 0.78539816]
 
         assert isinstance(scale_ratio_range, seq_types), \
             f'unsupported scale_ratio_range type {type(scale_ratio_range)}'
-        self.scale_ratio_range = scale_ratio_range
+        self.scale_ratio_range = scale_ratio_range # [0.95, 1.05]
 
         if not isinstance(translation_std, seq_types):
             assert isinstance(translation_std, (int, float)), \
@@ -549,8 +549,8 @@ class GlobalRotScaleTrans(object):
             ]
         assert all([std >= 0 for std in translation_std]), \
             'translation_std should be positive'
-        self.translation_std = translation_std
-        self.shift_height = shift_height
+        self.translation_std = translation_std # [0.2, 0.2, 0.2]
+        self.shift_height = shift_height # False
 
     def _trans_bbox_points(self, input_dict):
         """Private function to translate bounding boxes and points.
@@ -563,13 +563,13 @@ class GlobalRotScaleTrans(object):
                 and keys in input_dict['bbox3d_fields'] are updated \
                 in the result dict.
         """
-        translation_std = np.array(self.translation_std, dtype=np.float32)
-        trans_factor = np.random.normal(scale=translation_std, size=3).T
+        translation_std = np.array(self.translation_std, dtype=np.float32) # 构造平移协方差-->eg:[0.2,0.2,0.2]
+        trans_factor = np.random.normal(scale=translation_std, size=3).T  # 随机采样平移量-->eg:[0.177,-0.275,-0.0446]
 
-        input_dict['points'].translate(trans_factor)
-        input_dict['pcd_trans'] = trans_factor
+        input_dict['points'].translate(trans_factor) # 平移点
+        input_dict['pcd_trans'] = trans_factor # 将平移量写入相应字段
         for key in input_dict['bbox3d_fields']:
-            input_dict[key].translate(trans_factor)
+            input_dict[key].translate(trans_factor) # 平移box
 
     def _rot_bbox_points(self, input_dict):
         """Private function to rotate bounding boxes and points.
@@ -582,8 +582,8 @@ class GlobalRotScaleTrans(object):
                 and keys in input_dict['bbox3d_fields'] are updated \
                 in the result dict.
         """
-        rotation = self.rot_range
-        noise_rotation = np.random.uniform(rotation[0], rotation[1])
+        rotation = self.rot_range # [-0.78539816, 0.78539816]
+        noise_rotation = np.random.uniform(rotation[0], rotation[1]) # 按照均匀化随机采样旋转 eg:0.7806
 
         # if no bbox in input_dict, only rotate points
         if len(input_dict['bbox3d_fields']) == 0:
@@ -595,9 +595,9 @@ class GlobalRotScaleTrans(object):
         for key in input_dict['bbox3d_fields']:
             if len(input_dict[key].tensor) != 0:
                 points, rot_mat_T = input_dict[key].rotate(
-                    noise_rotation, input_dict['points'])
-                input_dict['points'] = points
-                input_dict['pcd_rotation'] = rot_mat_T
+                    noise_rotation, input_dict['points']) # 按照给定的角度或者旋转矩阵，旋转box和points
+                input_dict['points'] = points # 更新点云
+                input_dict['pcd_rotation'] = rot_mat_T # 将增加旋转矩阵的转置字段'pcd_rotation'
 
     def _scale_bbox_points(self, input_dict):
         """Private function to scale bounding boxes and points.
@@ -609,17 +609,17 @@ class GlobalRotScaleTrans(object):
             dict: Results after scaling, 'points'and keys in \
                 input_dict['bbox3d_fields'] are updated in the result dict.
         """
-        scale = input_dict['pcd_scale_factor']
-        points = input_dict['points']
-        points.scale(scale)
+        scale = input_dict['pcd_scale_factor'] # 获取点云缩放尺度
+        points = input_dict['points'] # 获取点云
+        points.scale(scale) # 缩放点云
         if self.shift_height:
             assert 'height' in points.attribute_dims.keys(), \
                 'setting shift_height=True but points have no height attribute'
             points.tensor[:, points.attribute_dims['height']] *= scale
         input_dict['points'] = points
-
+        # key:gt_bbox_3d
         for key in input_dict['bbox3d_fields']:
-            input_dict[key].scale(scale)
+            input_dict[key].scale(scale) # 对box进行缩放
 
     def _random_scale(self, input_dict):
         """Private function to randomly set the scale factor.
@@ -631,8 +631,9 @@ class GlobalRotScaleTrans(object):
             dict: Results after scaling, 'pcd_scale_factor' are updated \
                 in the result dict.
         """
+        # self.scale_ratio_range = [0.95, 1.05]
         scale_factor = np.random.uniform(self.scale_ratio_range[0],
-                                         self.scale_ratio_range[1])
+                                         self.scale_ratio_range[1]) # 随机采样一个缩放尺度
         input_dict['pcd_scale_factor'] = scale_factor
 
     def __call__(self, input_dict):
@@ -648,17 +649,17 @@ class GlobalRotScaleTrans(object):
                 input_dict['bbox3d_fields'] are updated in the result dict.
         """
         if 'transformation_3d_flow' not in input_dict:
-            input_dict['transformation_3d_flow'] = []
+            input_dict['transformation_3d_flow'] = [] # 添加‘transformation_3d_flow’字段，并初始化为[]
 
-        self._rot_bbox_points(input_dict)
+        self._rot_bbox_points(input_dict) # 旋转box和点云
 
         if 'pcd_scale_factor' not in input_dict:
-            self._random_scale(input_dict)
-        self._scale_bbox_points(input_dict)
+            self._random_scale(input_dict) # 随机采样一个缩放尺度
+        self._scale_bbox_points(input_dict) # 缩放box和点云
 
         self._trans_bbox_points(input_dict)
 
-        input_dict['transformation_3d_flow'].extend(['R', 'S', 'T'])
+        input_dict['transformation_3d_flow'].extend(['R', 'S', 'T']) # 添加变换流信息
         return input_dict
 
     def __repr__(self):
@@ -685,7 +686,7 @@ class PointShuffle(object):
             dict: Results after filtering, 'points', 'pts_instance_mask' \
                 and 'pts_semantic_mask' keys are updated in the result dict.
         """
-        idx = input_dict['points'].shuffle()
+        idx = input_dict['points'].shuffle() # torch.randperm --> (16011,) 将id打乱，再重新选择
         idx = idx.numpy()
 
         pts_instance_mask = input_dict.get('pts_instance_mask', None)
@@ -712,7 +713,7 @@ class ObjectRangeFilter(object):
     """
 
     def __init__(self, point_cloud_range):
-        self.pcd_range = np.array(point_cloud_range, dtype=np.float32)
+        self.pcd_range = np.array(point_cloud_range, dtype=np.float32) # [0, -40, -3, 70.4, 40, 1]
 
     def __call__(self, input_dict):
         """Call function to filter objects by the range.
@@ -727,22 +728,24 @@ class ObjectRangeFilter(object):
         # Check points instance type and initialise bev_range
         if isinstance(input_dict['gt_bboxes_3d'],
                       (LiDARInstance3DBoxes, DepthInstance3DBoxes)):
-            bev_range = self.pcd_range[[0, 1, 3, 4]]
+            bev_range = self.pcd_range[[0, 1, 3, 4]] # [0, -40, 70.4, 40]
         elif isinstance(input_dict['gt_bboxes_3d'], CameraInstance3DBoxes):
             bev_range = self.pcd_range[[0, 2, 3, 5]]
 
+        # 获取gt box3d和label
         gt_bboxes_3d = input_dict['gt_bboxes_3d']
         gt_labels_3d = input_dict['gt_labels_3d']
-        mask = gt_bboxes_3d.in_range_bev(bev_range)
+        mask = gt_bboxes_3d.in_range_bev(bev_range) # 检查box3d在bev视角下是否在range内,获取mask
         gt_bboxes_3d = gt_bboxes_3d[mask]
         # mask is a torch tensor but gt_labels_3d is still numpy array
         # using mask to index gt_labels_3d will cause bug when
         # len(gt_labels_3d) == 1, where mask=1 will be interpreted
         # as gt_labels_3d[1] and cause out of index error
+        # 由于mask是tensor，而gt_labels_3d是array，这里需要将mask转换为numpy在进行索引
         gt_labels_3d = gt_labels_3d[mask.numpy().astype(np.bool)]
 
         # limit rad to [-pi, pi]
-        gt_bboxes_3d.limit_yaw(offset=0.5, period=2 * np.pi)
+        gt_bboxes_3d.limit_yaw(offset=0.5, period=2 * np.pi) # 将航向角限制在合理范围内
         input_dict['gt_bboxes_3d'] = gt_bboxes_3d
         input_dict['gt_labels_3d'] = gt_labels_3d
 
@@ -764,7 +767,7 @@ class PointsRangeFilter(object):
     """
 
     def __init__(self, point_cloud_range):
-        self.pcd_range = np.array(point_cloud_range, dtype=np.float32)
+        self.pcd_range = np.array(point_cloud_range, dtype=np.float32) # [0, -40, -3, 70.4, 40, 1]
 
     def __call__(self, input_dict):
         """Call function to filter points by the range.

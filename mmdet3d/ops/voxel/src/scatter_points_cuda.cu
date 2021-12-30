@@ -31,13 +31,16 @@ __device__ __forceinline__ static void reduceMax(float *address, float val) {
 
 __device__ __forceinline__ static void reduceMax(double *address, double val) {
   unsigned long long *address_as_ull =
-      reinterpret_cast<unsigned long long *>(address);
+      reinterpret_cast<unsigned long long *>(address); // 获取该地址的值
   unsigned long long old = *address_as_ull, assumed;
   do {
     assumed = old;
+    // 读取位于全局或共享存储器中地址address_as_ull处的32位或64位字old，计算 (old == assumed ? val : old)，
+    // 并将结果存储在存储器的同一地址中。这三项操作在一次原子事务中执行。该函数将返回old
+    // 首先将old赋值assume，然后取address_as_ull处的值作为old，此时old == assumed，因此将后面val和old的最大值赋予old
     old = atomicCAS(
         address_as_ull, assumed,
-        __double_as_longlong(fmax(val, __longlong_as_double(assumed))));
+        __double_as_longlong(fmax(val, __longlong_as_double(assumed)))); // 原子操作，取该值和前一个值的最大值作为当前值
   } while (assumed != old || __longlong_as_double(old) < val);
 }
 
@@ -54,6 +57,7 @@ __device__ __forceinline__ static void reduceAdd(float *address, float val) {
     old = atomicCAS(address_as_i, assumed,
                     __float_as_int(val + __int_as_float(assumed)));
   } while (assumed != old);
+
 #else
   atomicAdd(address, val);
 #endif
@@ -88,8 +92,9 @@ feats_reduce_kernel(const T *feats, const int32_t *coors_map,
     int32_t reduce_to = coors_map[x];
     if (reduce_to == -1) continue;
 
-    const T *feats_offset = feats + x * num_feats;
+    const T *feats_offset = feats + x * num_feats; // 起点 + index X 特征维度
     T *reduced_feats_offset = reduced_feats + reduce_to * num_feats;
+    // 一个线程负责计算一个点的所有特征，在该特征维度取最大值或者加和
     if (reduce_type == reduce_t::MAX) {
       for (int i = 0; i < num_feats; i++) {
         reduceMax(&reduced_feats_offset[i], feats_offset[i]);
@@ -186,8 +191,8 @@ std::vector<at::Tensor> dynamic_point_to_voxel_forward_gpu(
   CHECK_INPUT(feats);
   CHECK_INPUT(coors);
 
-  const int num_input = feats.size(0);
-  const int num_feats = feats.size(1);
+  const int num_input = feats.size(0); // 点的数量
+  const int num_feats = feats.size(1); // 每个点的特征维度
 
   if (num_input == 0)
     return {feats.clone().detach(),
@@ -203,6 +208,41 @@ std::vector<at::Tensor> dynamic_point_to_voxel_forward_gpu(
 
   std::tie(out_coors, coors_map, reduce_count) =
       at::unique_dim(coors_clean, 0, true, true, true);
+  /*
+  def unique(input, sorted=True, return_inverse=False, return_counts=False, dim=None):
+    ##返回一个独特的tensor序列  我们可以设定返回是否经过排序的序列和索引和个数
+    if dim is not None:
+        output, inverse_indices, counts = torch._C._VariableFunctions.unique_dim(
+            input,
+            dim,
+            sorted=sorted,
+            return_inverse=return_inverse,
+            return_counts=return_counts,
+        )
+    else:
+        output, inverse_indices, counts = torch._unique2(
+            input,
+            sorted=sorted,
+            return_inverse=return_inverse,
+            return_counts=return_counts,
+        )
+    if return_inverse and return_counts:
+        return output, inverse_indices, counts
+    elif return_inverse:
+        return output, inverse_indices
+    elif return_counts:
+        return output, counts
+    else:
+        return output
+  
+  import torch
+  a=torch.tensor([1,2,4,2,3,1,3,4,2])
+  torch.functional.unique(a,return_counts=True,return_inverse=True)
+  
+  (tensor([1, 2, 3, 4]),
+  tensor([0, 1, 3, 1, 2, 0, 2, 3, 1]),
+  tensor([2, 3, 2, 2]))
+  */
 
   if (out_coors.index({0, 0}).lt(0).item<bool>()) {
     // the first element of out_coors (-1,-1,-1) and should be removed

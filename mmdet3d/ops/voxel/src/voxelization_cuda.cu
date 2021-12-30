@@ -31,9 +31,10 @@ __global__ void dynamic_voxelize_kernel(
     const int NDim) {
   //   const int index = blockIdx.x * threadsPerBlock + threadIdx.x;
   CUDA_1D_KERNEL_LOOP(index, num_points) {
-    // To save some computation
-    auto points_offset = points + index * num_features;
-    auto coors_offset = coors + index * NDim;
+    // To save some computation，在内存中都是线性存储
+    auto points_offset = points + index * num_features; // 计算点的内存偏移量
+    auto coors_offset = coors + index * NDim; // 计算坐标的内存偏移量
+    // 计算点的坐标
     int c_x = floor((points_offset[0] - coors_x_min) / voxel_x);
     if (c_x < 0 || c_x >= grid_x) {
       coors_offset[0] = -1;

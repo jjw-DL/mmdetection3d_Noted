@@ -74,11 +74,11 @@ class KittiDataset(Custom3DDataset):
             filter_empty_gt=filter_empty_gt,
             test_mode=test_mode)
 
-        self.split = split
-        self.root_split = os.path.join(self.data_root, split)
+        self.split = split # 'training'
+        self.root_split = os.path.join(self.data_root, split) # ''../data/kitti/training''
         assert self.modality is not None
-        self.pcd_limit_range = pcd_limit_range
-        self.pts_prefix = pts_prefix
+        self.pcd_limit_range = pcd_limit_range # [0, -40, -3, 70.4, 40, 0.0]
+        self.pts_prefix = pts_prefix # 'velodyne_reduced'
 
     def _get_pts_filename(self, idx):
         """Get point cloud filename according to the given index.
@@ -156,36 +156,36 @@ class KittiDataset(Custom3DDataset):
                 - gt_names (list[str]): Class names of ground truths.
         """
         # Use index to get the annos, thus the evalhook could also use this api
-        info = self.data_infos[index]
-        rect = info['calib']['R0_rect'].astype(np.float32)
-        Trv2c = info['calib']['Tr_velo_to_cam'].astype(np.float32)
+        info = self.data_infos[index] # 根据index获取info信息
+        rect = info['calib']['R0_rect'].astype(np.float32) # 获取矫正矩阵信息
+        Trv2c = info['calib']['Tr_velo_to_cam'].astype(np.float32) # 获取激光雷达到相机的矩阵
 
-        annos = info['annos']
+        annos = info['annos'] # 获取标注信息
         # we need other objects to avoid collision when sample
-        annos = self.remove_dontcare(annos)
-        loc = annos['location']
-        dims = annos['dimensions']
-        rots = annos['rotation_y']
-        gt_names = annos['name']
+        annos = self.remove_dontcare(annos) # 返回移除dontcare信息后的annos
+        loc = annos['location'] #（n,3）
+        dims = annos['dimensions'] #（n,3）
+        rots = annos['rotation_y'] #（n,）
+        gt_names = annos['name'] #（n,）
         gt_bboxes_3d = np.concatenate([loc, dims, rots[..., np.newaxis]],
-                                      axis=1).astype(np.float32)
+                                      axis=1).astype(np.float32) # 拼接gt_bboxes_3d信息
 
         # convert gt_bboxes_3d to velodyne coordinates
         gt_bboxes_3d = CameraInstance3DBoxes(gt_bboxes_3d).convert_to(
-            self.box_mode_3d, np.linalg.inv(rect @ Trv2c))
-        gt_bboxes = annos['bbox']
+            self.box_mode_3d, np.linalg.inv(rect @ Trv2c)) # 先构造相机坐标系下的gt_box_3d,然后转换到雷达坐标系下
+        gt_bboxes = annos['bbox'] # (m, 4)
 
-        selected = self.drop_arrays_by_name(gt_names, ['DontCare'])
-        gt_bboxes = gt_bboxes[selected].astype('float32')
-        gt_names = gt_names[selected]
+        selected = self.drop_arrays_by_name(gt_names, ['DontCare']) # 移除dontcare信息-->[1,2,3,4]
+        gt_bboxes = gt_bboxes[selected].astype('float32') # 筛选gt_box信息
+        gt_names = gt_names[selected] # 筛选gt_name信息 ['Car', 'Car', 'Truck', 'Car']
 
         gt_labels = []
         for cat in gt_names:
             if cat in self.CLASSES:
-                gt_labels.append(self.CLASSES.index(cat))
+                gt_labels.append(self.CLASSES.index(cat)) # 如果筛选的gt_name在设置的类别中，添加对应索引
             else:
-                gt_labels.append(-1)
-        gt_labels = np.array(gt_labels).astype(np.int64)
+                gt_labels.append(-1) # 否则添加-1
+        gt_labels = np.array(gt_labels).astype(np.int64) # [2, 2, -1, 2]
         gt_labels_3d = copy.deepcopy(gt_labels)
 
         anns_results = dict(
@@ -238,7 +238,8 @@ class KittiDataset(Custom3DDataset):
         img_filtered_annotations = {}
         relevant_annotation_indices = [
             i for i, x in enumerate(ann_info['name']) if x != 'DontCare'
-        ]
+        ] # 获取相对标注索引 eg:[1, 2, 3, 4]
+        # 根据相对索引将anno中的所有项提取出
         for key in ann_info.keys():
             img_filtered_annotations[key] = (
                 ann_info[key][relevant_annotation_indices])

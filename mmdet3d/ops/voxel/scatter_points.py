@@ -24,7 +24,13 @@ class _dynamic_scatter(Function):
                 that shares the same voxel coordinates are reduced to one row
             coordinates: [M, ndim] int tensor, voxel coordinates.
         """
-        results = dynamic_point_to_voxel_forward(feats, coors, reduce_type)
+        # 1.在dynamic_point_to_voxel_forward_gpu中调用
+        # std::tie(out_coors, coors_map, reduce_count) = at::unique_dim(coors_clean, 0, true, true, true);
+        # 计算所有的有效voxle的坐标out_coors，原始输入映射到输出中元素的位置索引coors_map，每一个唯一元素出现的次数
+        # 2.调用feats_reduce_kernel核函数计算voxel内特征
+        # 根据线程索引和特征维度计算特征在内存中的位置，同时根据voxle坐标计算存放的位置
+        # 3.调用reduceAdd或者reduceMax计算特征
+        results = dynamic_point_to_voxel_forward(feats, coors, reduce_type) 
         (voxel_feats, voxel_coors, point2voxel_map,
          voxel_points_count) = results
         ctx.reduce_type = reduce_type
@@ -83,18 +89,21 @@ class DynamicScatter(nn.Module):
         if coors.size(-1) == 3:
             return self.forward_single(points, coors)
         else:
-            batch_size = coors[-1, 0] + 1
+            batch_size = coors[-1, 0] + 1 # 最后一个点的batch索引 + 1
             voxels, voxel_coors = [], []
             for i in range(batch_size):
+                # 获取该batch中第i帧点云索引
                 inds = torch.where(coors[:, 0] == i)
+                # 计算体素和体素坐标
                 voxel, voxel_coor = self.forward_single(
                     points[inds], coors[inds][:, 1:])
+                # 添加batch信息
                 coor_pad = nn.functional.pad(
                     voxel_coor, (1, 0), mode='constant', value=i)
                 voxel_coors.append(coor_pad)
                 voxels.append(voxel)
-            features = torch.cat(voxels, dim=0)
-            feature_coors = torch.cat(voxel_coors, dim=0)
+            features = torch.cat(voxels, dim=0) # （16160, 4）
+            feature_coors = torch.cat(voxel_coors, dim=0) # (16160, 4)
 
             return features, feature_coors
 

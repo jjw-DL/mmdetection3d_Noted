@@ -44,12 +44,13 @@ class DefaultFormatBundle(object):
         if 'img' in results:
             if isinstance(results['img'], list):
                 # process multiple imgs in single frame
-                imgs = [img.transpose(2, 0, 1) for img in results['img']]
+                imgs = [img.transpose(2, 0, 1) for img in results['img']] # 调整图片通道维度，放到最前面
                 imgs = np.ascontiguousarray(np.stack(imgs, axis=0))
-                results['img'] = DC(to_tensor(imgs), stack=True)
+                results['img'] = DC(to_tensor(imgs), stack=True) # 将图片转化为tensor后，包装为DataContainer
             else:
                 img = np.ascontiguousarray(results['img'].transpose(2, 0, 1))
                 results['img'] = DC(to_tensor(img), stack=True)
+        # 将下面key中的值包装为DataContainer:gt_labels_3d
         for key in [
                 'proposals', 'gt_bboxes', 'gt_bboxes_ignore', 'gt_labels',
                 'gt_labels_3d', 'attr_labels', 'pts_instance_mask',
@@ -61,10 +62,11 @@ class DefaultFormatBundle(object):
                 results[key] = DC([to_tensor(res) for res in results[key]])
             else:
                 results[key] = DC(to_tensor(results[key]))
+
         if 'gt_bboxes_3d' in results:
             if isinstance(results['gt_bboxes_3d'], BaseInstance3DBoxes):
                 results['gt_bboxes_3d'] = DC(
-                    results['gt_bboxes_3d'], cpu_only=True)
+                    results['gt_bboxes_3d'], cpu_only=True) # 将gt_bboxes_3d包装为DataContainer
             else:
                 results['gt_bboxes_3d'] = DC(
                     to_tensor(results['gt_bboxes_3d']))
@@ -139,7 +141,7 @@ class Collect3D(object):
                             'img_norm_cfg', 'pcd_trans', 'sample_idx',
                             'pcd_scale_factor', 'pcd_rotation', 'pts_filename',
                             'transformation_3d_flow')):
-        self.keys = keys
+        self.keys = keys # ['points', 'img', 'gt_bboxes_3d', 'gt_labels_3d']
         self.meta_keys = meta_keys
 
     def __call__(self, results):
@@ -156,12 +158,13 @@ class Collect3D(object):
         """
         data = {}
         img_metas = {}
+        # 将result中img_metas中包含的字段赋值
         for key in self.meta_keys:
             if key in results:
                 img_metas[key] = results[key]
 
-        data['img_metas'] = DC(img_metas, cpu_only=True)
-        for key in self.keys:
+        data['img_metas'] = DC(img_metas, cpu_only=True) # 将img_metas包装为DataContainer
+        for key in self.keys: # ['points','img', 'gt_bboxes_3d', 'gt_labels_3d']
             data[key] = results[key]
         return data
 
@@ -189,9 +192,9 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
 
     def __init__(self, class_names, with_gt=True, with_label=True):
         super(DefaultFormatBundle3D, self).__init__()
-        self.class_names = class_names
-        self.with_gt = with_gt
-        self.with_label = with_label
+        self.class_names = class_names # ['Pedestrian', 'Cyclist', 'Car']
+        self.with_gt = with_gt # True
+        self.with_label = with_label # True
 
     def __call__(self, results):
         """Call function to transform and format common fields in results.
@@ -206,7 +209,7 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
         # Format 3D data
         if 'points' in results:
             assert isinstance(results['points'], BasePoints)
-            results['points'] = DC(results['points'].tensor)
+            results['points'] = DC(results['points'].tensor) # 将points包装为DataContainer
 
         for key in ['voxels', 'coors', 'voxel_centers', 'num_points']:
             if key not in results:
@@ -227,11 +230,13 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
                         gt_bboxes_3d_mask]
                 if 'depths' in results:
                     results['depths'] = results['depths'][gt_bboxes_3d_mask]
+
             if 'gt_bboxes_mask' in results:
                 gt_bboxes_mask = results['gt_bboxes_mask']
                 if 'gt_bboxes' in results:
                     results['gt_bboxes'] = results['gt_bboxes'][gt_bboxes_mask]
                 results['gt_names'] = results['gt_names'][gt_bboxes_mask]
+
             if self.with_label:
                 if 'gt_names' in results and len(results['gt_names']) == 0:
                     results['gt_labels'] = np.array([], dtype=np.int64)
@@ -245,7 +250,7 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
                     ]
                 elif 'gt_names' in results:
                     results['gt_labels'] = np.array([
-                        self.class_names.index(n) for n in results['gt_names']
+                        self.class_names.index(n) for n in results['gt_names'] # 将gt_names变为数字
                     ],
                                                     dtype=np.int64)
                 # we still assume one pipeline for one frame LiDAR

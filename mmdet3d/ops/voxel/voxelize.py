@@ -50,8 +50,8 @@ class _Voxelization(Function):
                 max_points != -1.
         """
         if max_points == -1 or max_voxels == -1:
-            coors = points.new_zeros(size=(points.size(0), 3), dtype=torch.int)
-            dynamic_voxelize(points, coors, voxel_size, coors_range, 3)
+            coors = points.new_zeros(size=(points.size(0), 3), dtype=torch.int) # (19221, 3)
+            dynamic_voxelize(points, coors, voxel_size, coors_range, 3) # 利用CUDA计算点的voxel坐标 --> (19221,3) 存在重复
             return coors
         else:
             voxels = points.new_zeros(

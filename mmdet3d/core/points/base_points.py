@@ -26,7 +26,7 @@ class BasePoints(object):
 
     def __init__(self, tensor, points_dim=3, attribute_dims=None):
         if isinstance(tensor, torch.Tensor):
-            device = tensor.device
+            device = tensor.device # 'cpu'
         else:
             device = torch.device('cpu')
         tensor = torch.as_tensor(tensor, dtype=torch.float32, device=device)
@@ -38,9 +38,9 @@ class BasePoints(object):
         assert tensor.dim() == 2 and tensor.size(-1) == \
             points_dim, tensor.size()
 
-        self.tensor = tensor
-        self.points_dim = points_dim
-        self.attribute_dims = attribute_dims
+        self.tensor = tensor # (16934, 4)
+        self.points_dim = points_dim # 4
+        self.attribute_dims = attribute_dims # None
         self.rotation_axis = 0
 
     @property
@@ -133,7 +133,7 @@ class BasePoints(object):
         Returns:
             torch.Tensor: The shuffled index.
         """
-        idx = torch.randperm(self.__len__(), device=self.tensor.device)
+        idx = torch.randperm(self.__len__(), device=self.tensor.device) # （16011，）
         self.tensor = self.tensor[idx]
         return idx
 
@@ -152,7 +152,7 @@ class BasePoints(object):
 
         if axis is None:
             axis = self.rotation_axis
-
+        # 根据旋转角和旋转轴构造旋转矩阵
         if rotation.numel() == 1:
             rot_sin = torch.sin(rotation)
             rot_cos = torch.cos(rotation)
@@ -175,7 +175,7 @@ class BasePoints(object):
             rot_mat_T = rotation
         else:
             raise NotImplementedError
-        self.tensor[:, :3] = self.tensor[:, :3] @ rot_mat_T
+        self.tensor[:, :3] = self.tensor[:, :3] @ rot_mat_T # 乘以旋转矩阵的转置
 
         return rot_mat_T
 
@@ -192,7 +192,7 @@ class BasePoints(object):
                 vector of size 3 or nx3.
         """
         if not isinstance(trans_vector, torch.Tensor):
-            trans_vector = self.tensor.new_tensor(trans_vector)
+            trans_vector = self.tensor.new_tensor(trans_vector) # 根据平移向量构造新的tensor
         trans_vector = trans_vector.squeeze(0)
         if trans_vector.dim() == 1:
             assert trans_vector.shape[0] == 3
@@ -203,7 +203,7 @@ class BasePoints(object):
             raise NotImplementedError(
                 f'Unsupported translation vector of shape {trans_vector.shape}'
             )
-        self.tensor[:, :3] += trans_vector
+        self.tensor[:, :3] += trans_vector # 在原坐标基础上加平移量
 
     def in_range_3d(self, point_range):
         """Check whether the points are in the given range.
@@ -227,7 +227,7 @@ class BasePoints(object):
                           & (self.tensor[:, 0] < point_range[3])
                           & (self.tensor[:, 1] < point_range[4])
                           & (self.tensor[:, 2] < point_range[5]))
-        return in_range_flags
+        return in_range_flags # （16934，）
 
     @abstractmethod
     def in_range_bev(self, point_range):
@@ -267,7 +267,7 @@ class BasePoints(object):
         Args:
             scale_factors (float): Scale factors to scale the points.
         """
-        self.tensor[:, :3] *= scale_factor
+        self.tensor[:, :3] *= scale_factor # 乘以尺度信息 --> (16934, 4)
 
     def __getitem__(self, item):
         """

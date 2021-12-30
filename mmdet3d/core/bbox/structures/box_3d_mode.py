@@ -101,6 +101,7 @@ class Box3DMode(IntEnum):
                 arr = box.clone()
 
         # convert box from `src` mode to `dst` mode.
+        # 根据不同的坐标系转换构造旋转矩阵
         x_size, y_size, z_size = arr[..., 3:4], arr[..., 4:5], arr[..., 5:6]
         if src == Box3DMode.LIDAR and dst == Box3DMode.CAM:
             if rt_mat is None:
@@ -133,10 +134,10 @@ class Box3DMode(IntEnum):
 
         if not isinstance(rt_mat, torch.Tensor):
             rt_mat = arr.new_tensor(rt_mat)
-        if rt_mat.size(1) == 4:
+        if rt_mat.size(1) == 4: # 如果rt_mat是4 x 4的
             extended_xyz = torch.cat(
-                [arr[:, :3], arr.new_ones(arr.size(0), 1)], dim=-1)
-            xyz = extended_xyz @ rt_mat.t()
+                [arr[:, :3], arr.new_ones(arr.size(0), 1)], dim=-1) # 在最后一维上拼接一个1
+            xyz = extended_xyz @ rt_mat.t() # 将扩展后的点 x 旋转矩阵
         else:
             xyz = arr[:, :3] @ rt_mat.t()
 

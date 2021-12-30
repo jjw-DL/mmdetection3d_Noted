@@ -154,8 +154,8 @@ class BaseInstance3DBoxes(object):
             trans_vector (torch.Tensor): Translation vector of size 1x3.
         """
         if not isinstance(trans_vector, torch.Tensor):
-            trans_vector = self.tensor.new_tensor(trans_vector)
-        self.tensor[:, :3] += trans_vector
+            trans_vector = self.tensor.new_tensor(trans_vector) # 将array变为tensor
+        self.tensor[:, :3] += trans_vector # 在box的x，y和z维度加上平移量
 
     def in_range_3d(self, box_range):
         """Check whether the boxes are in the given range.
@@ -219,7 +219,7 @@ class BaseInstance3DBoxes(object):
         Args:
             scale_factors (float): Scale factors to scale the boxes.
         """
-        self.tensor[:, :6] *= scale_factor
+        self.tensor[:, :6] *= scale_factor # 乘以缩放尺度
         self.tensor[:, 7:] *= scale_factor
 
     def limit_yaw(self, offset=0.5, period=np.pi):

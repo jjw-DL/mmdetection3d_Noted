@@ -25,6 +25,11 @@ def point_sample(img_meta,
                  padding_mode='zeros',
                  align_corners=True):
     """Obtain image features using points.
+    1.根据点云变换，恢复原始点云
+    2.根据外参将点云投影到原始图像上
+    3.根据img_meta信息，对投影点进行数据增强变换（平移，缩放，旋转，翻转）
+    4.计算采样比例，在[-1,1]之间
+    5.调用F.grid_sample进行采样
 
     Args:
         img_meta (dict): Meta info.
@@ -53,8 +58,15 @@ def point_sample(img_meta,
     """
 
     # apply transformation based on info in img_meta
+    """
+        "T" stands for translation;
+        "S" stands for scale;
+        "R" stands for rotation;
+        "HF" stands for horizontal flip;
+        "VF" stands for vertical flip.
+    """
     points = apply_3d_transformation(
-        points, coord_type, img_meta, reverse=True)
+        points, coord_type, img_meta, reverse=True) # 进行点云的逆变换,还原原始点云
 
     # project points to camera coordinate
     pts_2d = points_cam2img(points, proj_mat)
@@ -80,7 +92,7 @@ def point_sample(img_meta,
                      dim=1).unsqueeze(0).unsqueeze(0)  # Nx2 -> 1x1xNx2
 
     # align_corner=True provides higher performance
-    mode = 'bilinear' if aligned else 'nearest'
+    mode = 'bilinear' if aligned else 'nearest' # ‘bilinear’
     point_features = F.grid_sample(
         img_features,
         grid,
@@ -147,9 +159,9 @@ class PointFusion(BaseModule):
                  lateral_conv=True):
         super(PointFusion, self).__init__(init_cfg=init_cfg)
         if isinstance(img_levels, int):
-            img_levels = [img_levels]
+            img_levels = [img_levels] # [0, 1, 2, 3, 4]
         if isinstance(img_channels, int):
-            img_channels = [img_channels] * len(img_levels)
+            img_channels = [img_channels] * len(img_levels) # [256, 256, 256, 256, 256]
         assert isinstance(img_levels, list)
         assert isinstance(img_channels, list)
         assert len(img_channels) == len(img_levels)
@@ -187,11 +199,11 @@ class PointFusion(BaseModule):
             self.img_transform = nn.Sequential(
                 nn.Linear(sum(img_channels), out_channels),
                 nn.BatchNorm1d(out_channels, eps=1e-3, momentum=0.01),
-            )
+            ) # 640 --> 128
         self.pts_transform = nn.Sequential(
             nn.Linear(pts_channels, out_channels),
             nn.BatchNorm1d(out_channels, eps=1e-3, momentum=0.01),
-        )
+        ) # 64 --> 128
 
         if self.fuse_out:
             self.fuse_conv = nn.Sequential(
@@ -220,15 +232,15 @@ class PointFusion(BaseModule):
         Returns:
             torch.Tensor: Fused features of each point.
         """
-        img_pts = self.obtain_mlvl_feats(img_feats, pts, img_metas)
-        img_pre_fuse = self.img_transform(img_pts)
+        img_pts = self.obtain_mlvl_feats(img_feats, pts, img_metas) # 获取点云投影点图像多尺度拼接特征 --> (19221, 640)
+        img_pre_fuse = self.img_transform(img_pts) # 线性层，将640维特征降为128维度，获取前融合图像特征 --> (19221, 128)
         if self.training and self.dropout_ratio > 0:
             img_pre_fuse = F.dropout(img_pre_fuse, self.dropout_ratio)
-        pts_pre_fuse = self.pts_transform(pts_feats)
+        pts_pre_fuse = self.pts_transform(pts_feats) # 线性层，将64维特征升为128维度，获取前融合点云特征 --> (19221, 128)
 
-        fuse_out = img_pre_fuse + pts_pre_fuse
+        fuse_out = img_pre_fuse + pts_pre_fuse # 将点云特征和对应的图像特征融合 --> (19221, 128)
         if self.activate_out:
-            fuse_out = F.relu(fuse_out)
+            fuse_out = F.relu(fuse_out) # 激活函数
         if self.fuse_out:
             fuse_out = self.fuse_conv(fuse_out)
 
@@ -250,9 +262,10 @@ class PointFusion(BaseModule):
             img_ins = [
                 lateral_conv(img_feats[i])
                 for i, lateral_conv in zip(self.img_levels, self.lateral_convs)
-            ]
+            ] # 将各维度特征通道从256，降低为128
         else:
             img_ins = img_feats
+        # 初始化每个点的特征
         img_feats_per_point = []
         # Sample multi-level features
         for i in range(len(img_metas)):
@@ -260,11 +273,11 @@ class PointFusion(BaseModule):
             for level in range(len(self.img_levels)):
                 mlvl_img_feats.append(
                     self.sample_single(img_ins[level][i:i + 1], pts[i][:, :3],
-                                       img_metas[i]))
-            mlvl_img_feats = torch.cat(mlvl_img_feats, dim=-1)
+                                       img_metas[i])) # 获取点云投影点的多尺度特征，共5层 每层的特征都是（19221，128）
+            mlvl_img_feats = torch.cat(mlvl_img_feats, dim=-1) # （19221， 640）
             img_feats_per_point.append(mlvl_img_feats)
 
-        img_pts = torch.cat(img_feats_per_point, dim=0)
+        img_pts = torch.cat(img_feats_per_point, dim=0) # 将batch内的所有点云投影点对应的图像特征进行拼接，只有一帧点云-->（19221， 640）
         return img_pts
 
     def sample_single(self, img_feats, pts, img_meta):
@@ -282,11 +295,11 @@ class PointFusion(BaseModule):
         # TODO: image transformation also extracted
         img_scale_factor = (
             pts.new_tensor(img_meta['scale_factor'][:2])
-            if 'scale_factor' in img_meta.keys() else 1)
-        img_flip = img_meta['flip'] if 'flip' in img_meta.keys() else False
+            if 'scale_factor' in img_meta.keys() else 1) # 图片缩放尺度
+        img_flip = img_meta['flip'] if 'flip' in img_meta.keys() else False # 是否翻转
         img_crop_offset = (
             pts.new_tensor(img_meta['img_crop_offset'])
-            if 'img_crop_offset' in img_meta.keys() else 0)
+            if 'img_crop_offset' in img_meta.keys() else 0) # 图片偏移
         proj_mat = get_proj_mat_by_coord_type(img_meta, self.coord_type)
         img_pts = point_sample(
             img_meta=img_meta,

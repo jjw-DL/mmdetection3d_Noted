@@ -17,9 +17,10 @@ void dynamic_voxelize_kernel(const torch::TensorAccessor<T, 2> points,
   // int coor[NDim];
   int* coor = new int[NDim]();
   int c;
-
+  // 逐点
   for (int i = 0; i < num_points; ++i) {
     failed = false;
+    // 逐维度，计算体素坐标
     for (int j = 0; j < NDim; ++j) {
       c = floor((points[i][j] - coors_range[j]) / voxel_size[j]);
       // necessary to rm points out of range
@@ -29,7 +30,7 @@ void dynamic_voxelize_kernel(const torch::TensorAccessor<T, 2> points,
       }
       coor[ndim_minus_1 - j] = c;
     }
-
+    // 将计算失败的点坐标置为-1
     for (int k = 0; k < NDim; ++k) {
       if (failed)
         coors[i][k] = -1;
@@ -150,13 +151,13 @@ void dynamic_voxelize_cpu(const at::Tensor& points, at::Tensor& coors,
   // check device
   AT_ASSERTM(points.device().is_cpu(), "points must be a CPU tensor");
 
-  std::vector<int> grid_size(NDim);
-  const int num_points = points.size(0);
-  const int num_features = points.size(1);
+  std::vector<int> grid_size(NDim); // 定义网格范围
+  const int num_points = points.size(0); // 获取点的数量
+  const int num_features = points.size(1); // 获取点特征维度
 
   for (int i = 0; i < NDim; ++i) {
     grid_size[i] =
-        round((coors_range[NDim + i] - coors_range[i]) / voxel_size[i]);
+        round((coors_range[NDim + i] - coors_range[i]) / voxel_size[i]); // 计算网格范围
   }
 
   // coors, num_points_per_voxel, coor_to_voxelidx are int Tensor

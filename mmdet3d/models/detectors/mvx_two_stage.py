@@ -310,10 +310,11 @@ class MVXTwoStageDetector(Base3DDetector):
         Returns:
             dict: Losses of each branch.
         """
-        outs = self.pts_bbox_head(pts_feats)
-        loss_inputs = outs + (gt_bboxes_3d, gt_labels_3d, img_metas)
+        outs = self.pts_bbox_head(pts_feats) # (1, 18, 200, 176), (1, 42, 200, 176), (1, 12, 200, 176)
+        loss_inputs = outs + (gt_bboxes_3d, gt_labels_3d, img_metas) # 组合计算loss的输入，包括分类，回归和方向损失以及gt box、labels和img_metas
+        # 计算loss
         losses = self.pts_bbox_head.loss(
-            *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)
+            *loss_inputs, gt_bboxes_ignore=gt_bboxes_ignore)  
         return losses
 
     def forward_img_train(self,

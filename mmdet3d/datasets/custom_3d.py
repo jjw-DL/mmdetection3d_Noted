@@ -52,19 +52,21 @@ class Custom3DDataset(Dataset):
                  filter_empty_gt=True,
                  test_mode=False):
         super().__init__()
-        self.data_root = data_root
-        self.ann_file = ann_file
-        self.test_mode = test_mode
-        self.modality = modality
-        self.filter_empty_gt = filter_empty_gt
-        self.box_type_3d, self.box_mode_3d = get_box_type(box_type_3d)
+        self.data_root = data_root # '../data/kitti'
+        self.ann_file = ann_file #  '../data/kitti/kitti_infos_train.pkl'
+        self.test_mode = test_mode # False
+        self.modality = modality # {'use_lidar': True, 'use_camera': True}
+        self.filter_empty_gt = filter_empty_gt # True
+        # <class 'mmdet3d.core.bbox.structures.lidar_box3d.LiDARInstance3DBoxes'> 
+        # Box3DMode.LIDAR
+        self.box_type_3d, self.box_mode_3d = get_box_type(box_type_3d) 
 
-        self.CLASSES = self.get_classes(classes)
-        self.cat2id = {name: i for i, name in enumerate(self.CLASSES)}
-        self.data_infos = self.load_annotations(self.ann_file)
+        self.CLASSES = self.get_classes(classes) # ['Pedestrian', 'Cyclist', 'Car']
+        self.cat2id = {name: i for i, name in enumerate(self.CLASSES)} # {'Pedestrian': 0, 'Cyclist': 1, 'Car': 2}
+        self.data_infos = self.load_annotations(self.ann_file) # (3712，) 加载标注文件
 
         if pipeline is not None:
-            self.pipeline = Compose(pipeline)
+            self.pipeline = Compose(pipeline) # 初始化pipeline
 
         # set group flag for the sampler
         if not self.test_mode:
@@ -96,18 +98,19 @@ class Custom3DDataset(Dataset):
                 - file_name (str): Filename of point clouds.
                 - ann_info (dict): Annotation info.
         """
-        info = self.data_infos[index]
-        sample_idx = info['point_cloud']['lidar_idx']
-        pts_filename = osp.join(self.data_root, info['pts_path'])
+        info = self.data_infos[index] # 根据index获取对应的infos信息
+        sample_idx = info['point_cloud']['lidar_idx'] # 获取采样id eg:3832
+        pts_filename = osp.join(self.data_root, info['pts_path']) # '../data/kitti/training/image_2/003832.bin'
 
         input_dict = dict(
             pts_filename=pts_filename,
             sample_idx=sample_idx,
-            file_name=pts_filename)
+            file_name=pts_filename) # 构建输入字典
 
+        # 如果不是测试阶段
         if not self.test_mode:
-            annos = self.get_ann_info(index)
-            input_dict['ann_info'] = annos
+            annos = self.get_ann_info(index) # 根据index获取anno信息
+            input_dict['ann_info'] = annos # 将annos信息加入input_dict
             if self.filter_empty_gt and ~(annos['gt_labels_3d'] != -1).any():
                 return None
         return input_dict
@@ -128,6 +131,7 @@ class Custom3DDataset(Dataset):
                 - box_type_3d (str): 3D box type.
                 - box_mode_3d (str): 3D box mode.
         """
+        # 在input_dict中加入以下字段
         results['img_fields'] = []
         results['bbox3d_fields'] = []
         results['pts_mask_fields'] = []
@@ -147,13 +151,16 @@ class Custom3DDataset(Dataset):
         Returns:
             dict: Training data dict of the corresponding index.
         """
-        # 获取infos信息
+        # 获取infos信息，返回input_dict，包含sample_idx, pts_filename, img_prefix,img_info,lidar2img和ann_info等
         input_dict = self.get_data_info(index)
         if input_dict is None:
             return None
         self.pre_pipeline(input_dict) # 增加预处理字段
+        # ---------------------------
         # 对输入数据进行预处理
+        # ---------------------------
         example = self.pipeline(input_dict)
+        
         if self.filter_empty_gt and \
                 (example is None or
                     ~(example['gt_labels_3d']._data != -1).any()):
@@ -369,4 +376,4 @@ class Custom3DDataset(Dataset):
         otherwise group 0. In 3D datasets, they are all the same, thus are all
         zeros.
         """
-        self.flag = np.zeros(len(self), dtype=np.uint8)
+        self.flag = np.zeros(len(self), dtype=np.uint8) # (3712,)

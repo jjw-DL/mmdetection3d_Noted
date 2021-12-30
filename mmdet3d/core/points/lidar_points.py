@@ -24,12 +24,12 @@ class LiDARPoints(BasePoints):
     def __init__(self, tensor, points_dim=3, attribute_dims=None):
         super(LiDARPoints, self).__init__(
             tensor, points_dim=points_dim, attribute_dims=attribute_dims)
-        self.rotation_axis = 2
+        self.rotation_axis = 2 # 将旋转轴设置为2
 
     def flip(self, bev_direction='horizontal'):
         """Flip the boxes in BEV along given BEV direction."""
         if bev_direction == 'horizontal':
-            self.tensor[:, 1] = -self.tensor[:, 1]
+            self.tensor[:, 1] = -self.tensor[:, 1] # 由于坐标轴中心对称，翻转就是相反数
         elif bev_direction == 'vertical':
             self.tensor[:, 0] = -self.tensor[:, 0]
 

@@ -100,6 +100,7 @@ class LoadPointsFromMultiSweeps(object):
     """Load points from multiple sweeps.
 
     This is usually used for nuScenes dataset to utilize previous sweeps.
+    这里执行点云拼接，将关键帧前面的过渡帧的点云拼接到当前帧，增加点云密度和范围
 
     Args:
         sweeps_num (int): Number of sweeps. Defaults to 10.
@@ -125,14 +126,14 @@ class LoadPointsFromMultiSweeps(object):
                  pad_empty_sweeps=False,
                  remove_close=False,
                  test_mode=False):
-        self.load_dim = load_dim
-        self.sweeps_num = sweeps_num
-        self.use_dim = use_dim
-        self.file_client_args = file_client_args.copy()
+        self.load_dim = load_dim # 5
+        self.sweeps_num = sweeps_num # 10
+        self.use_dim = use_dim # [0, 1, 2, 4]
+        self.file_client_args = file_client_args.copy() # {'backend': 'disk'}
         self.file_client = None
-        self.pad_empty_sweeps = pad_empty_sweeps
-        self.remove_close = remove_close
-        self.test_mode = test_mode
+        self.pad_empty_sweeps = pad_empty_sweeps # False
+        self.remove_close = remove_close # False
+        self.test_mode = test_mode # False
 
     def _load_points(self, pts_filename):
         """Private function to load point clouds data.
@@ -153,7 +154,7 @@ class LoadPointsFromMultiSweeps(object):
             if pts_filename.endswith('.npy'):
                 points = np.load(pts_filename)
             else:
-                points = np.fromfile(pts_filename, dtype=np.float32)
+                points = np.fromfile(pts_filename, dtype=np.float32) # database中的bin格式的文件执行该行代码读取点云-->(1, n)
         return points
 
     def _remove_close(self, points, radius=1.0):
@@ -175,8 +176,8 @@ class LoadPointsFromMultiSweeps(object):
             raise NotImplementedError
         x_filt = np.abs(points_numpy[:, 0]) < radius
         y_filt = np.abs(points_numpy[:, 1]) < radius
-        not_close = np.logical_not(np.logical_and(x_filt, y_filt))
-        return points[not_close]
+        not_close = np.logical_not(np.logical_and(x_filt, y_filt)) # 先将x和y进行逻辑与后，得到x和y都在半径范围内的点，然后取反，得到半径范围外的点
+        return points[not_close] # 去除在半径范围内的点后，剩余的点
 
     def __call__(self, results):
         """Call function to load multi-sweep point clouds from files.
@@ -192,31 +193,34 @@ class LoadPointsFromMultiSweeps(object):
                 - points (np.ndarray | :obj:`BasePoints`): Multi-sweep point \
                     cloud arrays.
         """
-        points = results['points']
-        points.tensor[:, 4] = 0
-        sweep_points_list = [points]
-        ts = results['timestamp']
-        if self.pad_empty_sweeps and len(results['sweeps']) == 0:
+        points = results['points'] # 获取result中的点云
+        points.tensor[:, 4] = 0 # 将点云的第4维设置为0
+        sweep_points_list = [points] # 初始化sweep点云列表
+        ts = results['timestamp'] # 获取当前点云时间戳
+        # 如果sweep为空，并且要求重复点云
+        if self.pad_empty_sweeps and len(results['sweeps']) == 0: 
             for i in range(self.sweeps_num):
+                # 如果要移除近处点云，则将该点云radius范围内的点移除
                 if self.remove_close:
                     sweep_points_list.append(self._remove_close(points))
                 else:
-                    sweep_points_list.append(points)
+                    sweep_points_list.append(points) # 将该帧点云重复n次
         else:
             if len(results['sweeps']) <= self.sweeps_num:
-                choices = np.arange(len(results['sweeps']))
+                choices = np.arange(len(results['sweeps'])) # 如果少于10帧，则按顺序全部取出
             elif self.test_mode:
-                choices = np.arange(self.sweeps_num)
+                choices = np.arange(self.sweeps_num) # 如果是测试模式取10帧
             else:
                 choices = np.random.choice(
-                    len(results['sweeps']), self.sweeps_num, replace=False)
+                    len(results['sweeps']), self.sweeps_num, replace=False) # 如果超过10帧，则随机选择10帧
             for idx in choices:
                 sweep = results['sweeps'][idx]
-                points_sweep = self._load_points(sweep['data_path'])
+                points_sweep = self._load_points(sweep['data_path']) # 加载点云
                 points_sweep = np.copy(points_sweep).reshape(-1, self.load_dim)
                 if self.remove_close:
                     points_sweep = self._remove_close(points_sweep)
                 sweep_ts = sweep['timestamp'] / 1e6
+                # 将点云旋转到当前lidar系下，在obtain_sensor2top中通过global坐标系做桥梁
                 points_sweep[:, :3] = points_sweep[:, :3] @ sweep[
                     'sensor2lidar_rotation'].T
                 points_sweep[:, :3] += sweep['sensor2lidar_translation']
@@ -224,7 +228,7 @@ class LoadPointsFromMultiSweeps(object):
                 points_sweep = points.new_point(points_sweep)
                 sweep_points_list.append(points_sweep)
 
-        points = points.cat(sweep_points_list)
+        points = points.cat(sweep_points_list) # 将过度帧点云进行拼接
         points = points[:, self.use_dim]
         results['points'] = points
         return results
@@ -387,7 +391,7 @@ class LoadPointsFromFile(object):
         """
         # 如果为定义文件客户端，先初始化文件客户端
         if self.file_client is None:
-            self.file_client = mmcv.FileClient(**self.file_client_args)
+            self.file_client = mmcv.FileClient(**self.file_client_args) # {'backend': 'disk'}
         try:
             # 以bytes方式加载点云文件
             pts_bytes = self.file_client.get(pts_filename)
@@ -398,7 +402,7 @@ class LoadPointsFromFile(object):
             if pts_filename.endswith('.npy'):
                 points = np.load(pts_filename)
             else:
-                points = np.fromfile(pts_filename, dtype=np.float32)
+                points = np.fromfile(pts_filename, dtype=np.float32) # database中的bin格式的文件执行该行代码读取点云
 
         return points
 

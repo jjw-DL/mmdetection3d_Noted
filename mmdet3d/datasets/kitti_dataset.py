@@ -50,6 +50,7 @@ class KittiDataset(Custom3DDataset):
         pcd_limit_range (list): The range of point cloud used to filter
             invalid predicted boxes. Default: [0, -40, -3, 70.4, 40, 0.0].
     """
+    # 这是属于这个class的成员变量，可以通过cls.CLASSES获取
     CLASSES = ('car', 'pedestrian', 'cyclist')
 
     def __init__(self,
@@ -95,7 +96,9 @@ class KittiDataset(Custom3DDataset):
 
     def get_data_info(self, index):
         """Get data info according to the given index.
-
+        1.获取点云和图片路径以及sample index
+        2.获取标定信息
+        3.获取标注信息
         Args:
             index (int): Index of the sample data to get.
 
@@ -155,6 +158,7 @@ class KittiDataset(Custom3DDataset):
                 - gt_labels (np.ndarray): Labels of ground truths.
                 - gt_names (list[str]): Class names of ground truths.
         """
+        # 1.根据calib和anno信息构造CameraInstance3DBoxes并转换为LidarInstance3DBoxes
         # Use index to get the annos, thus the evalhook could also use this api
         info = self.data_infos[index] # 根据index获取info信息
         rect = info['calib']['R0_rect'].astype(np.float32) # 获取矫正矩阵信息
@@ -174,7 +178,8 @@ class KittiDataset(Custom3DDataset):
         gt_bboxes_3d = CameraInstance3DBoxes(gt_bboxes_3d).convert_to(
             self.box_mode_3d, np.linalg.inv(rect @ Trv2c)) # 先构造相机坐标系下的gt_box_3d,然后转换到雷达坐标系下
         gt_bboxes = annos['bbox'] # (m, 4)
-
+        
+        # 2.过滤dontcare的gt，并将不再设定类别中的gt，设置为-1,其余转化为数字
         selected = self.drop_arrays_by_name(gt_names, ['DontCare']) # 移除dontcare信息-->[1,2,3,4]
         gt_bboxes = gt_bboxes[selected].astype('float32') # 筛选gt_box信息
         gt_names = gt_names[selected] # 筛选gt_name信息 ['Car', 'Car', 'Truck', 'Car']
@@ -187,7 +192,7 @@ class KittiDataset(Custom3DDataset):
                 gt_labels.append(-1) # 否则添加-1
         gt_labels = np.array(gt_labels).astype(np.int64) # [2, 2, -1, 2]
         gt_labels_3d = copy.deepcopy(gt_labels)
-
+        # 3.组合result dict进行输出
         anns_results = dict(
             gt_bboxes_3d=gt_bboxes_3d,
             gt_labels_3d=gt_labels_3d, # box3d

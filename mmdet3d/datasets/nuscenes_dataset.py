@@ -124,8 +124,8 @@ class NuScenesDataset(Custom3DDataset):
                  test_mode=False,
                  eval_version='detection_cvpr_2019',
                  use_valid_flag=False):
-        self.load_interval = load_interval
-        self.use_valid_flag = use_valid_flag
+        self.load_interval = load_interval # 默认为1(全部加载)，可以设置为8，只使用1/8的数据集
+        self.use_valid_flag = use_valid_flag # 默认False
         super().__init__(
             data_root=data_root,
             ann_file=ann_file,
@@ -136,11 +136,11 @@ class NuScenesDataset(Custom3DDataset):
             filter_empty_gt=filter_empty_gt,
             test_mode=test_mode)
 
-        self.with_velocity = with_velocity
-        self.eval_version = eval_version
+        self.with_velocity = with_velocity # True
+        self.eval_version = eval_version # 'detection_cvpr_2019'
         from nuscenes.eval.detection.config import config_factory
-        self.eval_detection_configs = config_factory(self.eval_version)
-        if self.modality is None:
+        self.eval_detection_configs = config_factory(self.eval_version) # 初始化评估配置
+        if self.modality is None: # 设置使用模态
             self.modality = dict(
                 use_camera=False,
                 use_lidar=True,
@@ -161,12 +161,13 @@ class NuScenesDataset(Custom3DDataset):
                 otherwise, store empty list.
         """
         info = self.data_infos[idx]
+        # 先根据valid falg过滤部分gt
         if self.use_valid_flag:
             mask = info['valid_flag']
             gt_names = set(info['gt_names'][mask])
         else:
             gt_names = set(info['gt_names'])
-
+        # 将剩余gt从name映射为id
         cat_ids = []
         for name in gt_names:
             if name in self.CLASSES:
@@ -183,15 +184,17 @@ class NuScenesDataset(Custom3DDataset):
             list[dict]: List of annotations sorted by timestamps.
         """
         data = mmcv.load(ann_file)
-        data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp']))
-        data_infos = data_infos[::self.load_interval]
-        self.metadata = data['metadata']
-        self.version = self.metadata['version']
+        data_infos = list(sorted(data['infos'], key=lambda e: e['timestamp'])) # 根据时间戳对data_info进行排序
+        data_infos = data_infos[::self.load_interval] # 如果存在load_interval(eg:8)则每隔8帧取一个
+        self.metadata = data['metadata'] # 获取data的metadata信息
+        self.version = self.metadata['version'] # 获取metadata中的version信息
         return data_infos
 
     def get_data_info(self, index):
         """Get data info according to the given index.
-
+        1.获取点云路径，标记以及时间戳等信息
+        2.获取图像路径和标定信息
+        3.获取标注信息
         Args:
             index (int): Index of the sample data to get.
 
@@ -208,39 +211,41 @@ class NuScenesDataset(Custom3DDataset):
                     from lidar to different cameras.
                 - ann_info (dict): Annotation info.
         """
-        info = self.data_infos[index]
+        info = self.data_infos[index] # 根据索引返回info信息
         # standard protocal modified from SECOND.Pytorch
         input_dict = dict(
-            sample_idx=info['token'],
-            pts_filename=info['lidar_path'],
-            sweeps=info['sweeps'],
-            timestamp=info['timestamp'] / 1e6,
+            sample_idx=info['token'], # 样本标记
+            pts_filename=info['lidar_path'], # 点云存储路径
+            sweeps=info['sweeps'], # sweep信息
+            timestamp=info['timestamp'] / 1e6, # 时间戳
         )
-
+        # 如果使用相机模态
         if self.modality['use_camera']:
             image_paths = []
             lidar2img_rts = []
             for cam_type, cam_info in info['cams'].items():
-                image_paths.append(cam_info['data_path'])
+                image_paths.append(cam_info['data_path']) # 获取图片路径
                 # obtain lidar to image transformation matrix
-                lidar2cam_r = np.linalg.inv(cam_info['sensor2lidar_rotation'])
+                lidar2cam_r = np.linalg.inv(cam_info['sensor2lidar_rotation']) # lidar到camera的旋转矩阵
                 lidar2cam_t = cam_info[
-                    'sensor2lidar_translation'] @ lidar2cam_r.T
-                lidar2cam_rt = np.eye(4)
-                lidar2cam_rt[:3, :3] = lidar2cam_r.T
-                lidar2cam_rt[3, :3] = -lidar2cam_t
-                intrinsic = cam_info['cam_intrinsic']
-                viewpad = np.eye(4)
-                viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic
-                lidar2img_rt = (viewpad @ lidar2cam_rt.T)
+                    'sensor2lidar_translation'] @ lidar2cam_r.T # lidar到camera的平移向量
+                lidar2cam_rt = np.eye(4) # 初始化4x4的单位矩阵
+                lidar2cam_rt[:3, :3] = lidar2cam_r.T # 左上角3x3作为旋转矩阵
+                lidar2cam_rt[3, :3] = -lidar2cam_t # 左下角1x3作为平移向量
+
+                intrinsic = cam_info['cam_intrinsic'] # 获取相机内参
+                viewpad = np.eye(4) # 初始化4x4的单位矩阵
+                viewpad[:intrinsic.shape[0], :intrinsic.shape[1]] = intrinsic # 左上角3x3作为内参矩阵
+                lidar2img_rt = (viewpad @ lidar2cam_rt.T) # lidar到camera图像平面的投影矩阵
                 lidar2img_rts.append(lidar2img_rt)
 
             input_dict.update(
                 dict(
                     img_filename=image_paths,
                     lidar2img=lidar2img_rts,
-                ))
+                )) # 在input_dict中加入camera信息
 
+        # 如果不是测试模式，则获取标注信息
         if not self.test_mode:
             annos = self.get_ann_info(index)
             input_dict['ann_info'] = annos
@@ -261,27 +266,30 @@ class NuScenesDataset(Custom3DDataset):
                 - gt_labels_3d (np.ndarray): Labels of ground truths.
                 - gt_names (list[str]): Class names of ground truths.
         """
-        info = self.data_infos[index]
+        info = self.data_infos[index] # 根据index获取info信息
         # filter out bbox containing no points
         if self.use_valid_flag:
             mask = info['valid_flag']
         else:
             mask = info['num_lidar_pts'] > 0
+        # 根据valid_flag对box进行过滤
         gt_bboxes_3d = info['gt_boxes'][mask]
         gt_names_3d = info['gt_names'][mask]
+        # 处理lable
         gt_labels_3d = []
         for cat in gt_names_3d:
             if cat in self.CLASSES:
-                gt_labels_3d.append(self.CLASSES.index(cat))
+                gt_labels_3d.append(self.CLASSES.index(cat)) # 将gt_name对应的类别转换为id(数字)
             else:
-                gt_labels_3d.append(-1)
-        gt_labels_3d = np.array(gt_labels_3d)
+                gt_labels_3d.append(-1) # 如果不再当前的有效类别，则添加-1
+        gt_labels_3d = np.array(gt_labels_3d) # 转换为np.array格式
 
+        # 对速度进行处理
         if self.with_velocity:
             gt_velocity = info['gt_velocity'][mask]
             nan_mask = np.isnan(gt_velocity[:, 0])
-            gt_velocity[nan_mask] = [0.0, 0.0]
-            gt_bboxes_3d = np.concatenate([gt_bboxes_3d, gt_velocity], axis=-1)
+            gt_velocity[nan_mask] = [0.0, 0.0] # 将无法估计速度的物体的速度设置为0
+            gt_bboxes_3d = np.concatenate([gt_bboxes_3d, gt_velocity], axis=-1) # 在gt_box3d的最后一维拼接速度，变为9维
 
         # the nuscenes box center is [0.5, 0.5, 0.5], we change it to be
         # the same as KITTI (0.5, 0.5, 0)
@@ -291,9 +299,9 @@ class NuScenesDataset(Custom3DDataset):
             origin=(0.5, 0.5, 0.5)).convert_to(self.box_mode_3d)
 
         anns_results = dict(
-            gt_bboxes_3d=gt_bboxes_3d,
-            gt_labels_3d=gt_labels_3d,
-            gt_names=gt_names_3d)
+            gt_bboxes_3d=gt_bboxes_3d, # gt box3d
+            gt_labels_3d=gt_labels_3d, # lables 数字
+            gt_names=gt_names_3d) # gt names 类别名字
         return anns_results
 
     def _format_bbox(self, results, jsonfile_prefix=None):

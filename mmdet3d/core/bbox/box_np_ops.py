@@ -789,7 +789,7 @@ def points_in_convex_polygon_3d_jit(points,
     num_polygons = polygon_surfaces.shape[0] # 1 有几个凸包体
     if num_surfaces is None:
         num_surfaces = np.full((num_polygons, ), 9999999, dtype=np.int64)
-    normal_vec, d = surface_equ_3d(polygon_surfaces[:, :, :3, :])
+    normal_vec, d = surface_equ_3d(polygon_surfaces[:, :, :3, :]) # 计算平面的法向量和偏移d Ax+By+Cz+d=0
     # normal_vec: [num_polygon, max_num_surfaces, 3]
     # d: [num_polygon, max_num_surfaces]
     return _points_in_convex_polygon_3d_jit(points, polygon_surfaces,

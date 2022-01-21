@@ -123,10 +123,10 @@ def create_groundtruth_database(dataset_class_name,
     """Given the raw data, generate the ground truth database.
 
     Args:
-        dataset_class_name （str): Name of the input dataset.
-        data_path (str): Path of the data.
-        info_prefix (str): Prefix of the info file.
-        info_path (str): Path of the info file.
+        dataset_class_name （str): Name of the input dataset. --> NuScenesDataset
+        data_path (str): Path of the data. --> ../data/nuscenes
+        info_prefix (str): Prefix of the info file. --> nuscenes
+        info_path (str): Path of the info file. --> nuscenes_infos_train.pkl
             Default: None.
         mask_anno_path (str): Path of the mask_anno.
             Default: None.
@@ -224,11 +224,11 @@ def create_groundtruth_database(dataset_class_name,
     dataset = build_dataset(dataset_cfg)
     # 点云数据存储路径（文件夹）
     if database_save_path is None:
-        database_save_path = osp.join(data_path, f'{info_prefix}_gt_database')
+        database_save_path = osp.join(data_path, f'{info_prefix}_gt_database') # nuscenes_gt_database
     # infos存储路径（文件）
     if db_info_save_path is None:
         db_info_save_path = osp.join(data_path,
-                                     f'{info_prefix}_dbinfos_train.pkl')
+                                     f'{info_prefix}_dbinfos_train.pkl') # nuscenes_dbinfos_train.pkl
     # 创建文件夹
     mmcv.mkdir_or_exist(database_save_path)
     # 初始db_infos字典
@@ -248,12 +248,26 @@ def create_groundtruth_database(dataset_class_name,
     # 逐帧处理
     for j in track_iter_progress(list(range(len(dataset)))):
         # 根据id读取infos信息
-        input_dict = dataset.get_data_info(j)
+        """ For nuscenes
+        - sample_idx (str): Sample index.
+        - pts_filename (str): Filename of point clouds.
+        - sweeps (list[dict]): Infos of sweeps.
+        - timestamp (float): Sample timestamp.
+        - img_filename (str, optional): Image filename.
+        - lidar2img (list[np.ndarray], optional): Transformations \
+            from lidar to different cameras.
+        - ann_info (dict): Annotation info.
+            - gt_bboxes_3d (:obj:`LiDARInstance3DBoxes`): \
+                    3D ground truth bboxes
+            - gt_labels_3d (np.ndarray): Labels of ground truths.
+            - gt_names 
+        """
+        input_dict = dataset.get_data_info(j) # 根据索引获取输入
         dataset.pre_pipeline(input_dict) # 在input_dict中加入pre_pipeline的fild信息
-        example = dataset.pipeline(input_dict) # 将数据送入pipeline处理
+        example = dataset.pipeline(input_dict) # 将数据送入pipeline处理(custome_3d中初始化)，处理之后数据格式统一，可能会增加不同字段
         annos = example['ann_info']
-        image_idx = example['sample_idx']
-        points = example['points'].tensor.numpy()
+        image_idx = example['sample_idx'] # 在kitti中为点云id，在nuscenes为token
+        points = example['points'].tensor.numpy() # 在pipeline的loading的LoadPointsFromFile将点云信息加入result的'points'字段
         gt_boxes_3d = annos['gt_bboxes_3d'].tensor.numpy()
         names = annos['gt_names']
         # 初始化一帧点云中的group_id,包含全部object
@@ -261,16 +275,16 @@ def create_groundtruth_database(dataset_class_name,
         if 'group_ids' in annos:
             group_ids = annos['group_ids']
         else:
-            group_ids = np.arange(gt_boxes_3d.shape[0], dtype=np.int64)
-        difficulty = np.zeros(gt_boxes_3d.shape[0], dtype=np.int32)
+            group_ids = np.arange(gt_boxes_3d.shape[0], dtype=np.int64) # 如果不存在group_id则按顺序初始化
+        difficulty = np.zeros(gt_boxes_3d.shape[0], dtype=np.int32) # 全部初始化为0
         if 'difficulty' in annos:
             difficulty = annos['difficulty']
 
-        num_obj = gt_boxes_3d.shape[0]
-        # 获取3D gt box内的点云索引 Indices of points in each box
+        num_obj = gt_boxes_3d.shape[0] # 获取该帧物体数量
+        # 获取3D gt box内的点云索引 [N, M]：Indices of points in each box
         point_indices = box_np_ops.points_in_rbbox(points, gt_boxes_3d)
 
-        if with_mask:
+        if with_mask: # 默认为False
             # prepare masks
             gt_boxes = annos['gt_bboxes']
             img_path = osp.split(example['img_info']['filename'])[-1]
@@ -300,16 +314,17 @@ def create_groundtruth_database(dataset_class_name,
             #     torch.Tensor(mask_inds).long(), object_img_patches)
             object_img_patches, object_masks = crop_image_patch(
                 gt_boxes, gt_masks, mask_inds, annos['img'])
+        
         # 逐个box处理
         for i in range(num_obj):
             # 图片id+类名+个数.bin
-            filename = f'{image_idx}_{names[i]}_{i}.bin'
+            filename = f'{image_idx}_{names[i]}_{i}.bin' # kitti:0_Pedestrian_0.bin nuscene:f9878012c..._car_2.bin
             abs_filepath = osp.join(database_save_path, filename) # 绝对路径
-            rel_filepath = osp.join(f'{info_prefix}_gt_database', filename) # 相对路径
+            rel_filepath = osp.join(f'{info_prefix}_gt_database', filename) # 相对路径 nuscenes_gt_database/f9878012c..._car_2.bin
 
             # save point clouds and image patches for each object
-            gt_points = points[point_indices[:, i]] # 截取图片椎体内点云
-            gt_points[:, :3] -= gt_boxes_3d[i, :3] # 截取gt box内的点云
+            gt_points = points[point_indices[:, i]] # 截取gt box内点云
+            gt_points[:, :3] -= gt_boxes_3d[i, :3] # 从lidar系转换到local坐标系
 
             if with_mask:
                 if object_masks[i].sum() == 0 or not valid_inds[i]:
@@ -340,13 +355,13 @@ def create_groundtruth_database(dataset_class_name,
                 if local_group_id not in group_dict:
                     group_dict[local_group_id] = group_counter
                     group_counter += 1
-                db_info['group_id'] = group_dict[local_group_id]
+                db_info['group_id'] = group_dict[local_group_id] # 就是该帧中的第几个物体
                 if 'score' in annos:
-                    db_info['score'] = annos['score'][i]
+                    db_info['score'] = annos['score'][i] # 一般不含分数
                 if with_mask:
                     db_info.update({'box2d_camera': gt_boxes[i]})
                 if names[i] in all_db_infos:
-                    all_db_infos[names[i]].append(db_info)
+                    all_db_infos[names[i]].append(db_info) # 根据类别进行添加
                 else:
                     all_db_infos[names[i]] = [db_info]
     # 加载database infos信息

@@ -39,7 +39,7 @@ def box_collision_test(boxes, qboxes, clockwise=True):
     """
     N = boxes.shape[0]
     K = qboxes.shape[0]
-    ret = np.zeros((N, K), dtype=np.bool_)
+    ret = np.zeros((N, K), dtype=np.bool_) # 初始化结果矩阵
     slices = np.array([1, 2, 3, 0])
     lines_boxes = np.stack((boxes, boxes[:, slices, :]),
                            axis=2)  # [N, 4, 2(line), 2(xy)]

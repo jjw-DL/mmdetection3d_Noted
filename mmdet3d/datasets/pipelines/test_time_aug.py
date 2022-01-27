@@ -1,4 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
+from cv2 import transform
 import mmcv
 import warnings
 from copy import deepcopy
@@ -38,13 +39,13 @@ class MultiScaleFlipAug3D(object):
                  flip_direction='horizontal',
                  pcd_horizontal_flip=False,
                  pcd_vertical_flip=False):
-        self.transforms = Compose(transforms)
+        self.transforms = Compose(transforms) # 将变换组合
         self.img_scale = img_scale if isinstance(img_scale,
                                                  list) else [img_scale]
         self.pts_scale_ratio = pts_scale_ratio \
-            if isinstance(pts_scale_ratio, list) else[float(pts_scale_ratio)]
+            if isinstance(pts_scale_ratio, list) else[float(pts_scale_ratio)] #  将点云缩放尺度变为list
 
-        assert mmcv.is_list_of(self.img_scale, tuple)
+        assert mmcv.is_list_of(self.img_scale, tuple) # 断言当前的img_scale是否是一个tuple的seq
         assert mmcv.is_list_of(self.pts_scale_ratio, float)
 
         self.flip = flip
@@ -52,8 +53,8 @@ class MultiScaleFlipAug3D(object):
         self.pcd_vertical_flip = pcd_vertical_flip
 
         self.flip_direction = flip_direction if isinstance(
-            flip_direction, list) else [flip_direction]
-        assert mmcv.is_list_of(self.flip_direction, str)
+            flip_direction, list) else [flip_direction] # 将翻转方向变为list
+        assert mmcv.is_list_of(self.flip_direction, str) # 断言翻转方向
         if not self.flip and self.flip_direction != ['horizontal']:
             warnings.warn(
                 'flip_direction has no effect when flip is set to False')
@@ -71,7 +72,7 @@ class MultiScaleFlipAug3D(object):
 
         Returns:
             dict: The result dict contains the data that is augmented with \
-                different scales and flips.
+                different scales and flips.  
         """
         aug_data = []
 
@@ -101,13 +102,14 @@ class MultiScaleFlipAug3D(object):
                                     pcd_horizontal_flip
                                 _results['pcd_vertical_flip'] = \
                                     pcd_vertical_flip
-                                data = self.transforms(_results)
+                                data = self.transforms(_results) # 对results进行数据增强变换，主要是flip和scale
                                 aug_data.append(data)
         # list of dict to dict of list
-        aug_data_dict = {key: [] for key in aug_data[0]}
+        # 将data中的key初始化为空字典，只取第一个result就可以，因为其他的相同
+        aug_data_dict = {key: [] for key in aug_data[0]} 
         for data in aug_data:
             for key, val in data.items():
-                aug_data_dict[key].append(val)
+                aug_data_dict[key].append(val) # 相同的字段包含所有值
         return aug_data_dict
 
     def __repr__(self):

@@ -30,9 +30,9 @@ class BatchSampler:
         self._sampled_list = sampled_list
         self._indices = np.arange(len(sampled_list))
         if shuffle:
-            np.random.shuffle(self._indices)
+            np.random.shuffle(self._indices) # 打乱索引
         self._idx = 0
-        self._example_num = len(sampled_list)
+        self._example_num = len(sampled_list) # gt的数量
         self._name = name
         self._shuffle = shuffle
         self._epoch = epoch
@@ -48,9 +48,9 @@ class BatchSampler:
         Returns:
             list[int]: Indices of sampled ground truths.
         """
-        if self._idx + num >= self._example_num:
-            ret = self._indices[self._idx:].copy()
-            self._reset()
+        if self._idx + num >= self._example_num: # 采样数量如果大于gt的数量
+            ret = self._indices[self._idx:].copy() # 赋值全部索引作为结果
+            self._reset() # 将idx重置为0
         else:
             ret = self._indices[self._idx:self._idx + num]
             self._idx += num
@@ -62,10 +62,11 @@ class BatchSampler:
         # print("reset", self._name)
         if self._shuffle:
             np.random.shuffle(self._indices)
-        self._idx = 0
+        self._idx = 0 # 将idx重置为0
 
     def sample(self, num):
         """Sample specific number of ground truths.
+        采样一定数量的gt
 
         Args:
             num (int): Sampled number.
@@ -74,7 +75,7 @@ class BatchSampler:
             list[dict]: Sampled ground truths.
         """
         indices = self._sample(num)
-        return [self._sampled_list[i] for i in indices]
+        return [self._sampled_list[i] for i in indices] # info信息组成的list
 
 
 @OBJECTSAMPLERS.register_module()
@@ -105,27 +106,27 @@ class DataBaseSampler(object):
                      load_dim=4,
                      use_dim=[0, 1, 2, 3])):
         super().__init__()
-        self.data_root = data_root
-        self.info_path = info_path
+        self.data_root = data_root # database的存储路径
+        self.info_path = info_path # infos文件的路径
         self.rate = rate
-        self.prepare = prepare
-        self.classes = classes
-        self.cat2label = {name: i for i, name in enumerate(classes)}
+        self.prepare = prepare # 点云预处理pipeline
+        self.classes = classes # 采样类别
+        self.cat2label = {name: i for i, name in enumerate(classes)} # 下面两行将类别和数字对应
         self.label2cat = {i: name for i, name in enumerate(classes)}
-        self.points_loader = mmcv.build_from_cfg(points_loader, PIPELINES)
+        self.points_loader = mmcv.build_from_cfg(points_loader, PIPELINES) # 初始化点云加载器
 
-        db_infos = mmcv.load(info_path)
+        db_infos = mmcv.load(info_path) # 加载infos文件
 
         # filter database infos
         from mmdet3d.utils import get_root_logger
         logger = get_root_logger()
         for k, v in db_infos.items():
-            logger.info(f'load {len(v)} {k} database infos')
+            logger.info(f'load {len(v)} {k} database infos') # 输出database的各种类别gt的数量 eg:load 65262 truck database infos
         for prep_func, val in prepare.items():
-            db_infos = getattr(self, prep_func)(db_infos, val)
+            db_infos = getattr(self, prep_func)(db_infos, val) # 对db_infos进行预处理
         logger.info('After filter database:')
         for k, v in db_infos.items():
-            logger.info(f'load {len(v)} {k} database infos')
+            logger.info(f'load {len(v)} {k} database infos') # 输出database的各种类别gt的数量
 
         self.db_infos = db_infos
 
@@ -133,18 +134,18 @@ class DataBaseSampler(object):
         # TODO: more elegant way to load sample groups
         self.sample_groups = []
         for name, num in sample_groups.items():
-            self.sample_groups.append({name: int(num)})
+            self.sample_groups.append({name: int(num)}) # 将类别和数量字典加入sample_groups
 
         self.group_db_infos = self.db_infos  # just use db_infos
         self.sample_classes = []
         self.sample_max_nums = []
         for group_info in self.sample_groups:
-            self.sample_classes += list(group_info.keys())
-            self.sample_max_nums += list(group_info.values())
+            self.sample_classes += list(group_info.keys()) # 将类别组建列表
+            self.sample_max_nums += list(group_info.values()) # 将对应类别数量组建列表
 
         self.sampler_dict = {}
         for k, v in self.group_db_infos.items():
-            self.sampler_dict[k] = BatchSampler(v, k, shuffle=True)
+            self.sampler_dict[k] = BatchSampler(v, k, shuffle=True) # 针对类别进行采样，传入sampled_list和类别
         # TODO: No group_sampling currently
 
     @staticmethod
@@ -159,6 +160,7 @@ class DataBaseSampler(object):
             dict: Info of database after filtering.
         """
         new_db_infos = {}
+        # 逐个类别进行过滤
         for key, dinfos in db_infos.items():
             new_db_infos[key] = [
                 info for info in dinfos
@@ -178,15 +180,17 @@ class DataBaseSampler(object):
         Returns:
             dict: Info of database after filtering.
         """
+        # 逐个类别按照最少点数进行过滤
         for name, min_num in min_gt_points_dict.items():
             min_num = int(min_num)
             if min_num > 0:
                 filtered_infos = []
+                # 逐类别过滤
                 for info in db_infos[name]:
                     if info['num_points_in_gt'] >= min_num:
                         filtered_infos.append(info)
-                db_infos[name] = filtered_infos
-        return db_infos
+                db_infos[name] = filtered_infos # 将过滤后的infos重新写入
+        return db_infos   
 
     def sample_all(self, gt_bboxes, gt_labels, img=None):
         """Sampling all categories of bboxes.
@@ -209,60 +213,65 @@ class DataBaseSampler(object):
         sample_num_per_class = []
         for class_name, max_sample_num in zip(self.sample_classes,
                                               self.sample_max_nums):
-            class_label = self.cat2label[class_name]
+            class_label = self.cat2label[class_name] # 获取类别对应的数字
             # sampled_num = int(max_sample_num -
             #                   np.sum([n == class_name for n in gt_names]))
             sampled_num = int(max_sample_num -
-                              np.sum([n == class_label for n in gt_labels]))
-            sampled_num = np.round(self.rate * sampled_num).astype(np.int64)
-            sampled_num_dict[class_name] = sampled_num
-            sample_num_per_class.append(sampled_num)
+                              np.sum([n == class_label for n in gt_labels])) # 最大采样数-当前gt里面该类别的个数设置为当前采样数
+            sampled_num = np.round(self.rate * sampled_num).astype(np.int64) # 按照比率重新计算采样数
+            sampled_num_dict[class_name] = sampled_num # 该类别的采样数目
+            sample_num_per_class.append(sampled_num) # 每个类别的采样数量
 
         sampled = []
         sampled_gt_bboxes = []
-        avoid_coll_boxes = gt_bboxes
+        avoid_coll_boxes = gt_bboxes # 要避免碰撞的box
 
+        # 逐类按照按照采样数进行采样
         for class_name, sampled_num in zip(self.sample_classes,
                                            sample_num_per_class):
+            # 如果采样数大于0
             if sampled_num > 0:
+                # 采样该类别一定数量的box
                 sampled_cls = self.sample_class_v2(class_name, sampled_num,
                                                    avoid_coll_boxes)
 
-                sampled += sampled_cls
+                sampled += sampled_cls # 记录所有采样box，部分类别
                 if len(sampled_cls) > 0:
                     if len(sampled_cls) == 1:
                         sampled_gt_box = sampled_cls[0]['box3d_lidar'][
-                            np.newaxis, ...]
+                            np.newaxis, ...] # 如果只有一个box，则需要在最前面增加一个维度，方便后面concatenate
                     else:
                         sampled_gt_box = np.stack(
-                            [s['box3d_lidar'] for s in sampled_cls], axis=0)
-
-                    sampled_gt_bboxes += [sampled_gt_box]
+                            [s['box3d_lidar'] for s in sampled_cls], axis=0) # 将采样的box进行拼接
+                    # list相加为拼接，这里是list的元素为list，每个list为不同类别的采样gt box
+                    sampled_gt_bboxes += [sampled_gt_box] 
                     avoid_coll_boxes = np.concatenate(
-                        [avoid_coll_boxes, sampled_gt_box], axis=0)
-
+                        [avoid_coll_boxes, sampled_gt_box], axis=0) # 将采样的box和原始box进行拼接
+                    # tip:concatenate和stack的区别是concatenate不会新曾维度，stack会
+        
+        # 对result进行整合并返回
         ret = None
         if len(sampled) > 0:
-            sampled_gt_bboxes = np.concatenate(sampled_gt_bboxes, axis=0)
+            sampled_gt_bboxes = np.concatenate(sampled_gt_bboxes, axis=0) # 将所有采样的gt box进行拼接，忽略类别因素
             # center = sampled_gt_bboxes[:, 0:3]
 
             # num_sampled = len(sampled)
-            s_points_list = []
+            s_points_list = [] # 初始化点云列表
             count = 0
             for info in sampled:
                 file_path = os.path.join(
                     self.data_root,
-                    info['path']) if self.data_root else info['path']
-                results = dict(pts_filename=file_path)
-                s_points = self.points_loader(results)['points']
-                s_points.translate(info['box3d_lidar'][:3])
+                    info['path']) if self.data_root else info['path'] # 拼接文件路径
+                results = dict(pts_filename=file_path) # 构造results字典
+                s_points = self.points_loader(results)['points'] # 根据路径加载点云
+                s_points.translate(info['box3d_lidar'][:3]) # 因为在生成gt点云的时候，减去了box的偏移，这里要加回来将点云移入box内
 
                 count += 1
 
                 s_points_list.append(s_points)
 
             gt_labels = np.array([self.cat2label[s['name']] for s in sampled],
-                                 dtype=np.long)
+                                 dtype=np.long) # 构造label
             ret = {
                 'gt_labels_3d':
                 gt_labels,
@@ -288,30 +297,32 @@ class DataBaseSampler(object):
         Returns:
             list[dict]: Valid samples after collision test.
         """
-        sampled = self.sampler_dict[name].sample(num)
-        sampled = copy.deepcopy(sampled)
-        num_gt = gt_bboxes.shape[0]
-        num_sampled = len(sampled)
+        sampled = self.sampler_dict[name].sample(num) # 采样num个box
+        sampled = copy.deepcopy(sampled) # 进行深拷贝
+        num_gt = gt_bboxes.shape[0] # 获取gt box的数量
+        num_sampled = len(sampled) # 获取采样数量
         gt_bboxes_bv = box_np_ops.center_to_corner_box2d(
-            gt_bboxes[:, 0:2], gt_bboxes[:, 3:5], gt_bboxes[:, 6])
+            gt_bboxes[:, 0:2], gt_bboxes[:, 3:5], gt_bboxes[:, 6]) # 将gt box3D转换到bev视角
 
-        sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0)
-        boxes = np.concatenate([gt_bboxes, sp_boxes], axis=0).copy()
+        sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0) # 将sample info中的采样box进行堆叠
+        boxes = np.concatenate([gt_bboxes, sp_boxes], axis=0).copy() # 将gt和采样box堆叠
 
-        sp_boxes_new = boxes[gt_bboxes.shape[0]:]
+        sp_boxes_new = boxes[gt_bboxes.shape[0]:] # 获取采样的box-->这里为什么不直接取sp_boxes而是先拼接所有box，然后再截取呢？感觉多此一举
         sp_boxes_bv = box_np_ops.center_to_corner_box2d(
-            sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6])
+            sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6]) # 将采样的box转换到bev视角
 
-        total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0)
-        coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv)
+        total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0) # 在bev视角将gt和sp box进行拼接
+        coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv) # 检查box之间是否存在碰撞
         diag = np.arange(total_bv.shape[0])
-        coll_mat[diag, diag] = False
+        coll_mat[diag, diag] = False # box自己一定不会和自己相撞
 
         valid_samples = []
-        for i in range(num_gt, num_gt + num_sampled):
-            if coll_mat[i].any():
+        for i in range(num_gt, num_gt + num_sampled): # 只对采样box进行处理
+            # any() 函数用于判断给定的可迭代参数 iterable 是否全部为 False，则返回 False，如果有一个为 True，则返回 True
+            # 也就是说如果第i个采样box与任何一个box存在碰撞,则将该box包行的行和列全部设置为False
+            if coll_mat[i].any(): 
                 coll_mat[i] = False
                 coll_mat[:, i] = False
             else:
-                valid_samples.append(sampled[i - num_gt])
+                valid_samples.append(sampled[i - num_gt]) # 否则在有效采样box中添加该box
         return valid_samples

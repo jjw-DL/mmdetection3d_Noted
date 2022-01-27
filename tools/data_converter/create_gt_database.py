@@ -324,7 +324,7 @@ def create_groundtruth_database(dataset_class_name,
 
             # save point clouds and image patches for each object
             gt_points = points[point_indices[:, i]] # 截取gt box内点云
-            gt_points[:, :3] -= gt_boxes_3d[i, :3] # 从lidar系转换到local坐标系
+            gt_points[:, :3] -= gt_boxes_3d[i, :3] # 从lidar系转换到local坐标系，所有点云的起点都是0
 
             if with_mask:
                 if object_masks[i].sum() == 0 or not valid_inds[i]:

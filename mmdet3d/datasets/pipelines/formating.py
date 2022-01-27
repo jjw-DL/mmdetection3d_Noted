@@ -261,6 +261,7 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
                         for n in results['gt_names_3d']
                     ],
                                                        dtype=np.int64)
+        # 调用DefaultFormatBundle将标注信息包装为DataContainer
         results = super(DefaultFormatBundle3D, self).__call__(results)
         return results
 

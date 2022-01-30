@@ -128,11 +128,11 @@ class LoadPointsFromMultiSweeps(object):
                  test_mode=False):
         self.load_dim = load_dim # 5
         self.sweeps_num = sweeps_num # 10
-        self.use_dim = use_dim # [0, 1, 2, 4]
+        self.use_dim = use_dim # [0, 1, 2, 3, 4]
         self.file_client_args = file_client_args.copy() # {'backend': 'disk'}
         self.file_client = None
-        self.pad_empty_sweeps = pad_empty_sweeps # False
-        self.remove_close = remove_close # False
+        self.pad_empty_sweeps = pad_empty_sweeps # True
+        self.remove_close = remove_close # True
         self.test_mode = test_mode # False
 
     def _load_points(self, pts_filename):
@@ -374,7 +374,7 @@ class LoadPointsFromFile(object):
         assert coord_type in ['CAMERA', 'LIDAR', 'DEPTH']
 
         self.coord_type = coord_type # LIDAR
-        self.load_dim = load_dim # 4
+        self.load_dim = load_dim # 5
         self.use_dim = use_dim # [0, 1, 2, 3]
         self.file_client_args = file_client_args.copy() # {'backend': 'disk'}
         self.file_client = None
@@ -530,7 +530,7 @@ class LoadAnnotations3D(LoadAnnotations):
         self.with_attr_label = with_attr_label # False
         self.with_mask_3d = with_mask_3d # False
         self.with_seg_3d = with_seg_3d # False
-        self.seg_3d_dtype = seg_3d_dtype
+        self.seg_3d_dtype = seg_3d_dtype # False
 
     def _load_bboxes_3d(self, results):
         """Private function to load 3D bounding box annotations.

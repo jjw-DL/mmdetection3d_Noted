@@ -120,9 +120,9 @@ class RandomFlip3D(RandomFlip):
         for key in input_dict['bbox3d_fields']:
             if 'points' in input_dict:
                 input_dict['points'] = input_dict[key].flip(
-                    direction, points=input_dict['points'])
+                    direction, points=input_dict['points']) # 翻转点云
             else:
-                input_dict[key].flip(direction)
+                input_dict[key].flip(direction) # 翻转box --> ‘gt_bboxes_3d’
         if 'centers2d' in input_dict:
             assert self.sync_2d is True and direction == 'horizontal', \
                 'Only support sync_2d=True and horizontal flip with images'
@@ -157,8 +157,8 @@ class RandomFlip3D(RandomFlip):
         else:
             if 'pcd_horizontal_flip' not in input_dict:
                 flip_horizontal = True if np.random.rand(
-                ) < self.flip_ratio else False
-                input_dict['pcd_horizontal_flip'] = flip_horizontal
+                ) < self.flip_ratio else False # 按照cfg中的采样ratio随机采样
+                input_dict['pcd_horizontal_flip'] = flip_horizontal # 赋值水平翻转
             if 'pcd_vertical_flip' not in input_dict:
                 flip_vertical = True if np.random.rand(
                 ) < self.flip_ratio_bev_vertical else False
@@ -168,7 +168,7 @@ class RandomFlip3D(RandomFlip):
             input_dict['transformation_3d_flow'] = []
 
         if input_dict['pcd_horizontal_flip']:
-            self.random_flip_data_3d(input_dict, 'horizontal')
+            self.random_flip_data_3d(input_dict, 'horizontal') # 调用函数执行翻转
             input_dict['transformation_3d_flow'].extend(['HF']) # 在transformation_3d_flow字段中添加'HF'
         if input_dict['pcd_vertical_flip']:
             self.random_flip_data_3d(input_dict, 'vertical')
@@ -263,11 +263,11 @@ class ObjectSample(object):
     """
 
     def __init__(self, db_sampler, sample_2d=False):
-        self.sampler_cfg = db_sampler
+        self.sampler_cfg = db_sampler # 赋值配置文件中的db_sampler
         self.sample_2d = sample_2d
         if 'type' not in db_sampler.keys():
             db_sampler['type'] = 'DataBaseSampler'
-        self.db_sampler = build_from_cfg(db_sampler, OBJECTSAMPLERS)
+        self.db_sampler = build_from_cfg(db_sampler, OBJECTSAMPLERS) # 初始化db_sampler
 
     @staticmethod
     def remove_points_in_boxes(points, boxes):
@@ -295,11 +295,11 @@ class ObjectSample(object):
                 'points', 'gt_bboxes_3d', 'gt_labels_3d' keys are updated \
                 in the result dict.
         """
-        gt_bboxes_3d = input_dict['gt_bboxes_3d']
-        gt_labels_3d = input_dict['gt_labels_3d']
+        gt_bboxes_3d = input_dict['gt_bboxes_3d'] # 获取gt box
+        gt_labels_3d = input_dict['gt_labels_3d'] # 获取lable
 
         # change to float for blending operation
-        points = input_dict['points']
+        points = input_dict['points'] # 获取点云
         if self.sample_2d:
             img = input_dict['img']
             gt_bboxes_2d = input_dict['gt_bboxes']
@@ -311,9 +311,12 @@ class ObjectSample(object):
                 img=img)
         else:
             sampled_dict = self.db_sampler.sample_all(
-                gt_bboxes_3d.tensor.numpy(), gt_labels_3d, img=None)
-
+                gt_bboxes_3d.tensor.numpy(), gt_labels_3d, img=None) # 调用db_sampler.sample_all函数采样gt
+            """
+            ret = {'gt_labels_3d','gt_bboxes_3d','points','group_ids'}
+            """
         if sampled_dict is not None:
+            # 将新采样的box与原始gt box拼接，同时拼接points与gt labels
             sampled_gt_bboxes_3d = sampled_dict['gt_bboxes_3d']
             sampled_points = sampled_dict['points']
             sampled_gt_labels = sampled_dict['gt_labels_3d']
@@ -323,7 +326,7 @@ class ObjectSample(object):
             gt_bboxes_3d = gt_bboxes_3d.new_box(
                 np.concatenate(
                     [gt_bboxes_3d.tensor.numpy(), sampled_gt_bboxes_3d]))
-
+            # 移除不再box内的点
             points = self.remove_points_in_boxes(points, sampled_gt_bboxes_3d)
             # check the points dimension
             points = points.cat([sampled_points, points])
@@ -335,7 +338,8 @@ class ObjectSample(object):
 
                 input_dict['gt_bboxes'] = gt_bboxes_2d
                 input_dict['img'] = sampled_dict['img']
-
+        
+        # 返回采样后的结果
         input_dict['gt_bboxes_3d'] = gt_bboxes_3d
         input_dict['gt_labels_3d'] = gt_labels_3d.astype(np.long)
         input_dict['points'] = points
@@ -660,6 +664,7 @@ class GlobalRotScaleTrans(object):
         self._trans_bbox_points(input_dict)
 
         input_dict['transformation_3d_flow'].extend(['R', 'S', 'T']) # 添加变换流信息
+        # 这里不仅记录了旋转，缩放和平移后的gt，还记录了其变换参数，方便后续进行逆变换
         return input_dict
 
     def __repr__(self):
@@ -733,16 +738,17 @@ class ObjectRangeFilter(object):
             bev_range = self.pcd_range[[0, 2, 3, 5]]
 
         # 获取gt box3d和label
-        gt_bboxes_3d = input_dict['gt_bboxes_3d']
-        gt_labels_3d = input_dict['gt_labels_3d']
+        gt_bboxes_3d = input_dict['gt_bboxes_3d'] # 获取gt box
+        gt_labels_3d = input_dict['gt_labels_3d'] # 获取label
         mask = gt_bboxes_3d.in_range_bev(bev_range) # 检查box3d在bev视角下是否在range内,获取mask
-        gt_bboxes_3d = gt_bboxes_3d[mask]
+        gt_bboxes_3d = gt_bboxes_3d[mask] # 根据mask 过滤box
+
         # mask is a torch tensor but gt_labels_3d is still numpy array
         # using mask to index gt_labels_3d will cause bug when
         # len(gt_labels_3d) == 1, where mask=1 will be interpreted
         # as gt_labels_3d[1] and cause out of index error
         # 由于mask是tensor，而gt_labels_3d是array，这里需要将mask转换为numpy在进行索引
-        gt_labels_3d = gt_labels_3d[mask.numpy().astype(np.bool)]
+        gt_labels_3d = gt_labels_3d[mask.numpy().astype(np.bool)] # 根据mask过滤label
 
         # limit rad to [-pi, pi]
         gt_bboxes_3d.limit_yaw(offset=0.5, period=2 * np.pi) # 将航向角限制在合理范围内
@@ -779,10 +785,10 @@ class PointsRangeFilter(object):
             dict: Results after filtering, 'points', 'pts_instance_mask' \
                 and 'pts_semantic_mask' keys are updated in the result dict.
         """
-        points = input_dict['points']
-        points_mask = points.in_range_3d(self.pcd_range)
-        clean_points = points[points_mask]
-        input_dict['points'] = clean_points
+        points = input_dict['points'] # 获取点云
+        points_mask = points.in_range_3d(self.pcd_range) # 判断点是否在范围内，返回True和False的list
+        clean_points = points[points_mask] # 根据mask过滤点云
+        input_dict['points'] = clean_points # 赋值新点云
         points_mask = points_mask.numpy()
 
         pts_instance_mask = input_dict.get('pts_instance_mask', None)
@@ -825,11 +831,11 @@ class ObjectNameFilter(object):
             dict: Results after filtering, 'gt_bboxes_3d', 'gt_labels_3d' \
                 keys are updated in the result dict.
         """
-        gt_labels_3d = input_dict['gt_labels_3d']
+        gt_labels_3d = input_dict['gt_labels_3d'] # 获取label
         gt_bboxes_mask = np.array([n in self.labels for n in gt_labels_3d],
-                                  dtype=np.bool_)
-        input_dict['gt_bboxes_3d'] = input_dict['gt_bboxes_3d'][gt_bboxes_mask]
-        input_dict['gt_labels_3d'] = input_dict['gt_labels_3d'][gt_bboxes_mask]
+                                  dtype=np.bool_) # 根据label生成mask
+        input_dict['gt_bboxes_3d'] = input_dict['gt_bboxes_3d'][gt_bboxes_mask] # 过滤box
+        input_dict['gt_labels_3d'] = input_dict['gt_labels_3d'][gt_bboxes_mask] # 过滤label
 
         return input_dict
 

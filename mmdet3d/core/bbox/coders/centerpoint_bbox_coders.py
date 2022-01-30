@@ -30,13 +30,13 @@ class CenterPointBBoxCoder(BaseBBoxCoder):
                  score_threshold=None,
                  code_size=9):
 
-        self.pc_range = pc_range
-        self.out_size_factor = out_size_factor
-        self.voxel_size = voxel_size
-        self.post_center_range = post_center_range
-        self.max_num = max_num
-        self.score_threshold = score_threshold
-        self.code_size = code_size
+        self.pc_range = pc_range # [-51.2, -51.2]
+        self.out_size_factor = out_size_factor # 8
+        self.voxel_size = voxel_size # [0.1, 0.1]
+        self.post_center_range = post_center_range # [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
+        self.max_num = max_num # 500
+        self.score_threshold = score_threshold # 0.1
+        self.code_size = code_size # 9
 
     def _gather_feat(self, feats, inds, feat_masks=None):
         """Given feats and indexes, returns the gathered feats.

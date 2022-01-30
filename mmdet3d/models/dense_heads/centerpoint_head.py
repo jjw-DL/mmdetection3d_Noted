@@ -17,6 +17,7 @@ from mmdet.core import build_bbox_coder, multi_apply
 @HEADS.register_module()
 class SeparateHead(BaseModule):
     """SeparateHead for CenterHead.
+    该类的主要目的是根据不同的task，构建不同的Head，一共6个heads:{reg, height, dim, rot, vel, headtmap}，主要是heatmap不同
 
     Args:
         in_channels (int): Input channels for conv_layer.
@@ -47,18 +48,19 @@ class SeparateHead(BaseModule):
         assert init_cfg is None, 'To prevent abnormal initialization ' \
             'behavior, init_cfg is not allowed to be set'
         super(SeparateHead, self).__init__(init_cfg=init_cfg)
-        self.heads = heads
-        self.init_bias = init_bias
+        self.heads = heads # heads:{reg, height, dim, rot, vel, headtmap}
+        self.init_bias = init_bias # -2.19
+        # 逐项取出
         for head in self.heads:
-            classes, num_conv = self.heads[head]
+            classes, num_conv = self.heads[head] # num_conv一直为2
 
             conv_layers = []
-            c_in = in_channels
+            c_in = in_channels # 64
             for i in range(num_conv - 1):
                 conv_layers.append(
                     ConvModule(
-                        c_in,
-                        head_conv,
+                        c_in, # 64
+                        head_conv, # 64
                         kernel_size=final_kernel,
                         stride=1,
                         padding=final_kernel // 2,
@@ -70,13 +72,13 @@ class SeparateHead(BaseModule):
             conv_layers.append(
                 build_conv_layer(
                     conv_cfg,
-                    head_conv,
-                    classes,
+                    head_conv, # 64
+                    classes, # 2 (classes针对不同fild是不同的)
                     kernel_size=final_kernel,
                     stride=1,
                     padding=final_kernel // 2,
                     bias=True))
-            conv_layers = nn.Sequential(*conv_layers)
+            conv_layers = nn.Sequential(*conv_layers) # （64, 64）--> (64, 2)
 
             self.__setattr__(head, conv_layers)
 
@@ -293,24 +295,24 @@ class CenterHead(BaseModule):
             'behavior, init_cfg is not allowed to be set'
         super(CenterHead, self).__init__(init_cfg=init_cfg)
 
-        num_classes = [len(t['class_names']) for t in tasks]
+        num_classes = [len(t['class_names']) for t in tasks] # [1,2,2,1,2,2]
         self.class_names = [t['class_names'] for t in tasks]
         self.train_cfg = train_cfg
         self.test_cfg = test_cfg
-        self.in_channels = in_channels
-        self.num_classes = num_classes
-        self.norm_bbox = norm_bbox
+        self.in_channels = in_channels # 512
+        self.num_classes = num_classes # [1,2,2,1,2,2]
+        self.norm_bbox = norm_bbox # True
 
-        self.loss_cls = build_loss(loss_cls)
-        self.loss_bbox = build_loss(loss_bbox)
-        self.bbox_coder = build_bbox_coder(bbox_coder)
-        self.num_anchor_per_locs = [n for n in num_classes]
+        self.loss_cls = build_loss(loss_cls) # GaussianFocalLoss:mmdet.models.losses.gaussina_focal_loss
+        self.loss_bbox = build_loss(loss_bbox) # L1 Loss: mmdet.models.losses.smooth_l1_loss
+        self.bbox_coder = build_bbox_coder(bbox_coder) # CenterPointBBoxCoder:mmdet3d.core.bbox.coders.centerpoint_bbox_coders
+        self.num_anchor_per_locs = [n for n in num_classes] # [1,2,2,1,2,2]
         self.fp16_enabled = False
 
-        # a shared convolution
+        # a shared convolution 将512变为64
         self.shared_conv = ConvModule(
-            in_channels,
-            share_conv_channel,
+            in_channels, # 512
+            share_conv_channel, # 64
             kernel_size=3,
             padding=1,
             conv_cfg=conv_cfg,
@@ -319,12 +321,13 @@ class CenterHead(BaseModule):
 
         self.task_heads = nn.ModuleList()
 
+        # 逐task添加head
         for num_cls in num_classes:
-            heads = copy.deepcopy(common_heads)
-            heads.update(dict(heatmap=(num_cls, num_heatmap_convs)))
+            heads = copy.deepcopy(common_heads) # 深拷贝common_heads
+            heads.update(dict(heatmap=(num_cls, num_heatmap_convs))) # 加入heatmap参数，各head主要是heatmap不同
             separate_head.update(
-                in_channels=share_conv_channel, heads=heads, num_cls=num_cls)
-            self.task_heads.append(builder.build_head(separate_head))
+                in_channels=share_conv_channel, heads=heads, num_cls=num_cls) # 更新separate_head
+            self.task_heads.append(builder.build_head(separate_head)) # mmdet3d.models.dense_heads.conterpoint_head.SeparateHead
 
     def forward_single(self, x):
         """Forward function for CenterPoint.

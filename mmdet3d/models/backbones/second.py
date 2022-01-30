@@ -33,7 +33,7 @@ class SECOND(BaseModule):
         assert len(layer_strides) == len(layer_nums)
         assert len(out_channels) == len(layer_nums)
 
-        in_filters = [in_channels, *out_channels[:-1]]
+        in_filters = [in_channels, *out_channels[:-1]] # 计算每一个bock的起始输入channle[256, 128]
         # note that when stride > 1, conv2d with same padding isn't
         # equal to pad-conv2d. we should use pad-conv2d.
         blocks = []
@@ -45,10 +45,11 @@ class SECOND(BaseModule):
                     out_channels[i],
                     3,
                     stride=layer_strides[i],
-                    padding=1),
+                    padding=1), # 构建conv层
                 build_norm_layer(norm_cfg, out_channels[i])[1], # 这里取1的原因是返回值有两个一个是name，一个是layer
                 nn.ReLU(inplace=True),
             ]
+            # 按照配置文件构建n个输出输出相同的层
             for j in range(layer_num):
                 block.append(
                     build_conv_layer(

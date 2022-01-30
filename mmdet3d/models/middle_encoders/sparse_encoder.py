@@ -84,7 +84,7 @@ class SparseEncoder(nn.Module):
             make_sparse_convmodule,
             norm_cfg,
             self.base_channels,
-            block_type=block_type)
+            block_type=block_type) # ‘basicblock’
 
         # 最后stage:[200, 176, 5] -> [200, 176, 2]
         self.conv_out = make_sparse_convmodule(
@@ -165,6 +165,7 @@ class SparseEncoder(nn.Module):
                 padding = tuple(self.encoder_paddings[i])[j]
                 # each stage started with a spconv layer
                 # except the first stage
+                # 如果该block是conv_module，不是第一个block，是第一层则进入该判断
                 if i != 0 and j == 0 and block_type == 'conv_module':
                     blocks_list.append(
                         make_block(
@@ -176,8 +177,9 @@ class SparseEncoder(nn.Module):
                             padding=padding,
                             indice_key=f'spconv{i + 1}',
                             conv_type='SparseConv3d'))
-                # 在每个stage的中间阶段如果采用SparseConv3d，则进入该判断,在second中没有用到
+                # 如果该block是basicblock
                 elif block_type == 'basicblock':
+                    # 是该block的最后一层，且不是最后一个block
                     if j == len(blocks) - 1 and i != len(
                             self.encoder_channels) - 1:
                         blocks_list.append(
@@ -191,7 +193,9 @@ class SparseEncoder(nn.Module):
                                 indice_key=f'spconv{i + 1}',
                                 conv_type='SparseConv3d'))
                     else:
-                        # 反卷积会进入该stage
+                        # 如果该block是basicblock且不满足上面的条件则进入该判断
+                        # Sparse basic block implemented with submanifold sparse convolution
+                        # 继承自resnet的BasicBlock和spconv的SparseModule
                         blocks_list.append(
                             SparseBasicBlock(
                                 out_channels,
@@ -208,8 +212,8 @@ class SparseEncoder(nn.Module):
                             padding=padding,
                             indice_key=f'subm{i + 1}',
                             conv_type='SubMConv3d'))
-                in_channels = out_channels
-            stage_name = f'encoder_layer{i + 1}'
-            stage_layers = spconv.SparseSequential(*blocks_list)
-            self.encoder_layers.add_module(stage_name, stage_layers)
+                in_channels = out_channels # 更新输入通道
+            stage_name = f'encoder_layer{i + 1}' # 更新层名
+            stage_layers = spconv.SparseSequential(*blocks_list) # 序列化该层
+            self.encoder_layers.add_module(stage_name, stage_layers) # 将该layer添加进encoder_layers
         return out_channels

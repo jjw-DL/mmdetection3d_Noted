@@ -165,8 +165,8 @@ class Collect3D(object):
 
         data['img_metas'] = DC(img_metas, cpu_only=True) # 将img_metas包装为DataContainer
         for key in self.keys: # ['points','img', 'gt_bboxes_3d', 'gt_labels_3d']
-            data[key] = results[key]
-        return data
+            data[key] = results[key] # 提取需要的基本结果，在cfg中指定
+        return data # 返回值中包含img_metas和'points','gt_bboxes_3d', 'gt_labels_3d'等信息
 
     def __repr__(self):
         """str: Return a string that describes the module."""
@@ -212,7 +212,7 @@ class DefaultFormatBundle3D(DefaultFormatBundle):
             results['points'] = DC(results['points'].tensor) # 将points包装为DataContainer
 
         for key in ['voxels', 'coors', 'voxel_centers', 'num_points']:
-            if key not in results:
+            if key not in results: # 如果上面的字段不再result中，则跳过
                 continue
             results[key] = DC(to_tensor(results[key]), stack=False)
 

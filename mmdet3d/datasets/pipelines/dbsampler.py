@@ -108,7 +108,7 @@ class DataBaseSampler(object):
         super().__init__()
         self.data_root = data_root # database的存储路径
         self.info_path = info_path # infos文件的路径
-        self.rate = rate
+        self.rate = rate # 1.0
         self.prepare = prepare # 点云预处理pipeline
         self.classes = classes # 采样类别
         self.cat2label = {name: i for i, name in enumerate(classes)} # 下面两行将类别和数字对应
@@ -145,7 +145,7 @@ class DataBaseSampler(object):
 
         self.sampler_dict = {}
         for k, v in self.group_db_infos.items():
-            self.sampler_dict[k] = BatchSampler(v, k, shuffle=True) # 针对类别进行采样，传入sampled_list和类别
+            self.sampler_dict[k] = BatchSampler(v, k, shuffle=True) # 针对类别进行采样，传入sampled_list和类别,返回值实际是一个Class
         # TODO: No group_sampling currently
 
     @staticmethod
@@ -211,6 +211,7 @@ class DataBaseSampler(object):
         """
         sampled_num_dict = {}
         sample_num_per_class = []
+        # 按照类别和采样个数(cfg文件给出)，逐类计算采样个数
         for class_name, max_sample_num in zip(self.sample_classes,
                                               self.sample_max_nums):
             class_label = self.cat2label[class_name] # 获取类别对应的数字
@@ -219,23 +220,23 @@ class DataBaseSampler(object):
             sampled_num = int(max_sample_num -
                               np.sum([n == class_label for n in gt_labels])) # 最大采样数-当前gt里面该类别的个数设置为当前采样数
             sampled_num = np.round(self.rate * sampled_num).astype(np.int64) # 按照比率重新计算采样数
-            sampled_num_dict[class_name] = sampled_num # 该类别的采样数目
+            sampled_num_dict[class_name] = sampled_num # 该类别的采样数目,可能为负数
             sample_num_per_class.append(sampled_num) # 每个类别的采样数量
 
         sampled = []
         sampled_gt_bboxes = []
-        avoid_coll_boxes = gt_bboxes # 要避免碰撞的box
+        avoid_coll_boxes = gt_bboxes # 要避免碰撞的box eg: (32,9)
 
         # 逐类按照按照采样数进行采样
         for class_name, sampled_num in zip(self.sample_classes,
                                            sample_num_per_class):
-            # 如果采样数大于0
+            # 如果要采样数大于0
             if sampled_num > 0:
-                # 采样该类别一定数量的box
+                # 采样该类别一定数量的box的info
                 sampled_cls = self.sample_class_v2(class_name, sampled_num,
                                                    avoid_coll_boxes)
 
-                sampled += sampled_cls # 记录所有采样box，部分类别
+                sampled += sampled_cls # 记录所有采样box的info，不分类别
                 if len(sampled_cls) > 0:
                     if len(sampled_cls) == 1:
                         sampled_gt_box = sampled_cls[0]['box3d_lidar'][
@@ -246,10 +247,10 @@ class DataBaseSampler(object):
                     # list相加为拼接，这里是list的元素为list，每个list为不同类别的采样gt box
                     sampled_gt_bboxes += [sampled_gt_box] 
                     avoid_coll_boxes = np.concatenate(
-                        [avoid_coll_boxes, sampled_gt_box], axis=0) # 将采样的box和原始box进行拼接
+                        [avoid_coll_boxes, sampled_gt_box], axis=0) # 将采样的box和原始box进行拼接，更新要避免碰撞的box
                     # tip:concatenate和stack的区别是concatenate不会新曾维度，stack会
         
-        # 对result进行整合并返回
+        # 对result进行整合，包括box拼接，点云获取和label获取
         ret = None
         if len(sampled) > 0:
             sampled_gt_bboxes = np.concatenate(sampled_gt_bboxes, axis=0) # 将所有采样的gt box进行拼接，忽略类别因素
@@ -272,16 +273,17 @@ class DataBaseSampler(object):
 
             gt_labels = np.array([self.cat2label[s['name']] for s in sampled],
                                  dtype=np.long) # 构造label
+            # 返回的是采样的伪gt，不包括原始gt
             ret = {
                 'gt_labels_3d':
                 gt_labels,
                 'gt_bboxes_3d':
                 sampled_gt_bboxes,
                 'points':
-                s_points_list[0].cat(s_points_list),
+                s_points_list[0].cat(s_points_list), # 对采样点云进行拼接，因为点云是无顺序的，直接拼接即可
                 'group_ids':
                 np.arange(gt_bboxes.shape[0],
-                          gt_bboxes.shape[0] + len(sampled))
+                          gt_bboxes.shape[0] + len(sampled)) # 在原始box的基础上增加id
             }
 
         return ret
@@ -297,22 +299,22 @@ class DataBaseSampler(object):
         Returns:
             list[dict]: Valid samples after collision test.
         """
-        sampled = self.sampler_dict[name].sample(num) # 采样num个box
+        sampled = self.sampler_dict[name].sample(num) # 采样num个box的info
         sampled = copy.deepcopy(sampled) # 进行深拷贝
-        num_gt = gt_bboxes.shape[0] # 获取gt box的数量
-        num_sampled = len(sampled) # 获取采样数量
+        num_gt = gt_bboxes.shape[0] # 获取gt box的数量 eg:32
+        num_sampled = len(sampled) # 获取采样数量 eg:4
         gt_bboxes_bv = box_np_ops.center_to_corner_box2d(
-            gt_bboxes[:, 0:2], gt_bboxes[:, 3:5], gt_bboxes[:, 6]) # 将gt box3D转换到bev视角
+            gt_bboxes[:, 0:2], gt_bboxes[:, 3:5], gt_bboxes[:, 6]) # 将gt box3D转换到bev视角 eg:(32,4,2)
 
-        sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0) # 将sample info中的采样box进行堆叠
-        boxes = np.concatenate([gt_bboxes, sp_boxes], axis=0).copy() # 将gt和采样box堆叠
-
-        sp_boxes_new = boxes[gt_bboxes.shape[0]:] # 获取采样的box-->这里为什么不直接取sp_boxes而是先拼接所有box，然后再截取呢？感觉多此一举
+        sp_boxes = np.stack([i['box3d_lidar'] for i in sampled], axis=0) # 将sample info中的采样box进行堆叠 eg:(4,9)
+        boxes = np.concatenate([gt_bboxes, sp_boxes], axis=0).copy() # 将gt和采样box堆叠 eg:(36,9)
+        # 获取采样的box-->这里为什么不直接取sp_boxes而是先拼接所有box，然后再截取呢？感觉多此一举
+        sp_boxes_new = boxes[gt_bboxes.shape[0]:] # eg:(4,9)
         sp_boxes_bv = box_np_ops.center_to_corner_box2d(
-            sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6]) # 将采样的box转换到bev视角
+            sp_boxes_new[:, 0:2], sp_boxes_new[:, 3:5], sp_boxes_new[:, 6]) # 将采样的box转换到bev视角 eg:(4,4,2)
 
-        total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0) # 在bev视角将gt和sp box进行拼接
-        coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv) # 检查box之间是否存在碰撞
+        total_bv = np.concatenate([gt_bboxes_bv, sp_boxes_bv], axis=0) # 在bev视角将gt和sp box进行拼接 eg:(36,4,2)
+        coll_mat = data_augment_utils.box_collision_test(total_bv, total_bv) # 检查box之间是否存在碰撞 eg:(36,36)
         diag = np.arange(total_bv.shape[0])
         coll_mat[diag, diag] = False # box自己一定不会和自己相撞
 
@@ -324,5 +326,5 @@ class DataBaseSampler(object):
                 coll_mat[i] = False
                 coll_mat[:, i] = False
             else:
-                valid_samples.append(sampled[i - num_gt]) # 否则在有效采样box中添加该box
-        return valid_samples
+                valid_samples.append(sampled[i - num_gt]) # 否则在有效采样box中添加该info
+        return valid_samples # 返回有效采样的info

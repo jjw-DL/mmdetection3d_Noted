@@ -78,7 +78,7 @@ class SeparateHead(BaseModule):
                     stride=1,
                     padding=final_kernel // 2,
                     bias=True))
-            conv_layers = nn.Sequential(*conv_layers) # （64, 64）--> (64, 2)
+            conv_layers = nn.Sequential(*conv_layers) # （64, 64）--> (64, 2) Sequential可以将字典值直接序列化，使得层有名字
 
             self.__setattr__(head, conv_layers)
 
@@ -119,7 +119,7 @@ class SeparateHead(BaseModule):
         for head in self.heads:
             ret_dict[head] = self.__getattr__(head)(x)
 
-        return ret_dict
+        return ret_dict # 返回的是字典值，包含head的6个信息（如注释所示）
 
 
 @HEADS.register_module()
@@ -341,8 +341,8 @@ class CenterHead(BaseModule):
         """
         ret_dicts = []
 
-        x = self.shared_conv(x)
-
+        x = self.shared_conv(x) # （2, 64, 128, 128）
+        # cfg中有6个不同的task对应init中的6个Head:{reg, height, dim, rot, vel, headtmap}，主要是heatmap不同（类别）
         for task in self.task_heads:
             ret_dicts.append(task(x))
 
@@ -358,7 +358,7 @@ class CenterHead(BaseModule):
         Returns:
             tuple(list[dict]): Output results for tasks.
         """
-        return multi_apply(self.forward_single, feats)
+        return multi_apply(self.forward_single, feats) # 调用forward_single函数
 
     def _gather_feat(self, feat, ind, mask=None):
         """Gather feature map.
@@ -376,9 +376,10 @@ class CenterHead(BaseModule):
             torch.Tensor: Feature map after gathering with the shape
                 of [B, max_obj, 10].
         """
-        dim = feat.size(2)
+        dim = feat.size(2) # eg:10
+        # (1, 500) --> (1, 500, 1) --> (1, 500, 10)
         ind = ind.unsqueeze(2).expand(ind.size(0), ind.size(1), dim)
-        feat = feat.gather(1, ind)
+        feat = feat.gather(1, ind) # (1, 500, 10)
         if mask is not None:
             mask = mask.unsqueeze(2).expand_as(feat)
             feat = feat[mask]
@@ -419,8 +420,8 @@ class CenterHead(BaseModule):
         heatmaps, anno_boxes, inds, masks = multi_apply(
             self.get_targets_single, gt_bboxes_3d, gt_labels_3d)
         # Transpose heatmaps
-        heatmaps = list(map(list, zip(*heatmaps)))
-        heatmaps = [torch.stack(hms_) for hms_ in heatmaps]
+        heatmaps = list(map(list, zip(*heatmaps))) # 解压为6个list
+        heatmaps = [torch.stack(hms_) for hms_ in heatmaps] # 在每个list内进行stack --> (1, 1, 128, 128) 或 (1, 2, 128, 128)
         # Transpose anno_boxes
         anno_boxes = list(map(list, zip(*anno_boxes)))
         anno_boxes = [torch.stack(anno_boxes_) for anno_boxes_ in anno_boxes]
@@ -446,22 +447,23 @@ class CenterHead(BaseModule):
                 - list[torch.Tensor]: Heatmap scores.
                 - list[torch.Tensor]: Ground truth boxes.
                 - list[torch.Tensor]: Indexes indicating the position \
-                    of the valid boxes.
+                    of the valid boxes. 表示有效物体的中心点在特征图展开向量(一维向量)中的索引
                 - list[torch.Tensor]: Masks indicating which boxes \
                     are valid.
         """
-        device = gt_labels_3d.device
+        device = gt_labels_3d.device # cuda:0
         gt_bboxes_3d = torch.cat(
             (gt_bboxes_3d.gravity_center, gt_bboxes_3d.tensor[:, 3:]),
-            dim=1).to(device)
-        max_objs = self.train_cfg['max_objs'] * self.train_cfg['dense_reg']
-        grid_size = torch.tensor(self.train_cfg['grid_size'])
-        pc_range = torch.tensor(self.train_cfg['point_cloud_range'])
-        voxel_size = torch.tensor(self.train_cfg['voxel_size'])
+            dim=1).to(device) # gravity_center是box的中心，LiDARInstance3DBoxes的center在box的底部(z=0)
+        max_objs = self.train_cfg['max_objs'] * self.train_cfg['dense_reg'] # 500 × 1 = 500
+        grid_size = torch.tensor(self.train_cfg['grid_size']) # [1024, 1024, 40]
+        pc_range = torch.tensor(self.train_cfg['point_cloud_range']) # [-51.2, -51.2, -5.0, 51.2, 51.2, 3.0]
+        voxel_size = torch.tensor(self.train_cfg['voxel_size']) # [0.1, 0.1, 0.2]
 
-        feature_map_size = grid_size[:2] // self.train_cfg['out_size_factor']
+        feature_map_size = grid_size[:2] // self.train_cfg['out_size_factor'] # 1024 / 8 = 128 --> (128, 128)
 
         # reorganize the gt_dict by tasks
+        # 1.找到10个类别在gt_labels_3d中的位置生成10个list
         task_masks = []
         flag = 0
         for class_name in self.class_names:
@@ -474,56 +476,62 @@ class CenterHead(BaseModule):
         task_boxes = []
         task_classes = []
         flag2 = 0
+        # 逐task处理
         for idx, mask in enumerate(task_masks):
             task_box = []
             task_class = []
+            # mask是一个list，每个元素代表一个class
             for m in mask:
-                task_box.append(gt_bboxes_3d[m])
+                task_box.append(gt_bboxes_3d[m]) # 根据index提取box
                 # 0 is background for each task, so we need to add 1 here.
-                task_class.append(gt_labels_3d[m] + 1 - flag2)
+                task_class.append(gt_labels_3d[m] + 1 - flag2) # 根据index提取label，减去flag2后表示的是在该task中的label只有1和2，0表示背景
             task_boxes.append(torch.cat(task_box, axis=0).to(device))
             task_classes.append(torch.cat(task_class).long().to(device))
-            flag2 += len(mask)
-        draw_gaussian = draw_heatmap_gaussian
-        heatmaps, anno_boxes, inds, masks = [], [], [], []
+            flag2 += len(mask) # 1或2
 
+        draw_gaussian = draw_heatmap_gaussian
+        heatmaps, anno_boxes, inds, masks = [], [], [], [] # 初始化结果list
+
+        # 逐task处理
         for idx, task_head in enumerate(self.task_heads):
             heatmap = gt_bboxes_3d.new_zeros(
                 (len(self.class_names[idx]), feature_map_size[1],
-                 feature_map_size[0]))
+                 feature_map_size[0])) # （n, 128, 123）初始化heatmap
 
             anno_box = gt_bboxes_3d.new_zeros((max_objs, 10),
-                                              dtype=torch.float32)
+                                              dtype=torch.float32) # (500, 10)
 
-            ind = gt_labels_3d.new_zeros((max_objs), dtype=torch.int64)
-            mask = gt_bboxes_3d.new_zeros((max_objs), dtype=torch.uint8)
+            ind = gt_labels_3d.new_zeros((max_objs), dtype=torch.int64) # (500,)
+            mask = gt_bboxes_3d.new_zeros((max_objs), dtype=torch.uint8) # (500,)
 
-            num_objs = min(task_boxes[idx].shape[0], max_objs)
+            num_objs = min(task_boxes[idx].shape[0], max_objs) # 当前task有几个物体
 
+            # 逐个物体处理
             for k in range(num_objs):
-                cls_id = task_classes[idx][k] - 1
+                cls_id = task_classes[idx][k] - 1 # 获取class id
 
-                width = task_boxes[idx][k][3]
-                length = task_boxes[idx][k][4]
+                width = task_boxes[idx][k][3] # 获取box的宽
+                length = task_boxes[idx][k][4] # 获取box的长
                 width = width / voxel_size[0] / self.train_cfg[
-                    'out_size_factor']
+                    'out_size_factor'] # 计算特征图上的宽：先除voxle_size计算voxle大小，再除下采样因子
                 length = length / voxel_size[1] / self.train_cfg[
                     'out_size_factor']
 
                 if width > 0 and length > 0:
+                    # 根据box的长和宽以及overlap计算高斯半径
                     radius = gaussian_radius(
                         (length, width),
-                        min_overlap=self.train_cfg['gaussian_overlap'])
-                    radius = max(self.train_cfg['min_radius'], int(radius))
+                        min_overlap=self.train_cfg['gaussian_overlap']) # gaussian_overlap：0.1 比较小的原因是在bev视角下重叠小
+                    radius = max(self.train_cfg['min_radius'], int(radius)) # min_radius=2 限定最小值
 
                     # be really careful for the coordinate system of
                     # your box annotation.
                     x, y, z = task_boxes[idx][k][0], task_boxes[idx][k][
-                        1], task_boxes[idx][k][2]
+                        1], task_boxes[idx][k][2] # 获取box的中心坐标
 
                     coor_x = (
                         x - pc_range[0]
-                    ) / voxel_size[0] / self.train_cfg['out_size_factor']
+                    ) / voxel_size[0] / self.train_cfg['out_size_factor'] # 计算box的x坐标在特征图上的位置-->小数 eg:[66.566, 85.593]
                     coor_y = (
                         y - pc_range[1]
                     ) / voxel_size[1] / self.train_cfg['out_size_factor']
@@ -531,14 +539,16 @@ class CenterHead(BaseModule):
                     center = torch.tensor([coor_x, coor_y],
                                           dtype=torch.float32,
                                           device=device)
-                    center_int = center.to(torch.int32)
+                    center_int = center.to(torch.int32) # 整数 --> eg:[66, 85]
 
                     # throw out not in range objects to avoid out of array
                     # area when creating the heatmap
                     if not (0 <= center_int[0] < feature_map_size[0]
                             and 0 <= center_int[1] < feature_map_size[1]):
                         continue
-
+                    
+                    # 获取gaussian mask的heatmap
+                    # 参数为初始化的heatmpa， 中心点坐标和高斯半径
                     draw_gaussian(heatmap[cls_id], center_int, radius)
 
                     new_idx = k
@@ -547,14 +557,15 @@ class CenterHead(BaseModule):
                     assert (y * feature_map_size[0] + x <
                             feature_map_size[0] * feature_map_size[1])
 
-                    ind[new_idx] = y * feature_map_size[0] + x
+                    ind[new_idx] = y * feature_map_size[0] + x # 特征图展开成一维向量的索引赋值给ind
                     mask[new_idx] = 1
                     # TODO: support other outdoor dataset
-                    vx, vy = task_boxes[idx][k][7:]
-                    rot = task_boxes[idx][k][6]
-                    box_dim = task_boxes[idx][k][3:6]
+                    vx, vy = task_boxes[idx][k][7:] # 获取速度
+                    rot = task_boxes[idx][k][6] # 获取旋转
+                    box_dim = task_boxes[idx][k][3:6] # 获取长宽高
                     if self.norm_bbox:
-                        box_dim = box_dim.log()
+                        box_dim = box_dim.log() # 对长宽高取log
+                    # 重新组装新的anno_box
                     anno_box[new_idx] = torch.cat([
                         center - torch.tensor([x, y], device=device),
                         z.unsqueeze(0), box_dim,
@@ -563,12 +574,12 @@ class CenterHead(BaseModule):
                         vx.unsqueeze(0),
                         vy.unsqueeze(0)
                     ])
-
+            # 逐个task加入
             heatmaps.append(heatmap)
             anno_boxes.append(anno_box)
-            masks.append(mask)
-            inds.append(ind)
-        return heatmaps, anno_boxes, inds, masks
+            masks.append(mask) # 表示各task的有效物体
+            inds.append(ind) # 表示有效物体的中心点在特征图展开向量中的索引
+        return heatmaps, anno_boxes, inds, masks # 都是包含6个list的list
 
     @force_fp32(apply_to=('preds_dicts'))
     def loss(self, gt_bboxes_3d, gt_labels_3d, preds_dicts, **kwargs):
@@ -583,39 +594,47 @@ class CenterHead(BaseModule):
         Returns:
             dict[str:torch.Tensor]: Loss of heatmap and bbox of each task.
         """
+        # 生成6个task对应的heatmap, anno_boxes，有效位置索引和有效位置mask
         heatmaps, anno_boxes, inds, masks = self.get_targets(
             gt_bboxes_3d, gt_labels_3d)
-        loss_dict = dict()
+        loss_dict = dict() # 初始化loss的dict
+        
+        # 逐个task计算loss
         for task_id, preds_dict in enumerate(preds_dicts):
             # heatmap focal loss
-            preds_dict[0]['heatmap'] = clip_sigmoid(preds_dict[0]['heatmap'])
-            num_pos = heatmaps[task_id].eq(1).float().sum().item()
+            preds_dict[0]['heatmap'] = clip_sigmoid(preds_dict[0]['heatmap']) # 先计算预测heatmap的sigmoid
+            num_pos = heatmaps[task_id].eq(1).float().sum().item() # 计算有多少个物体
+            # 计算类别损失
             loss_heatmap = self.loss_cls(
                 preds_dict[0]['heatmap'],
                 heatmaps[task_id],
-                avg_factor=max(num_pos, 1))
-            target_box = anno_boxes[task_id]
+                avg_factor=max(num_pos, 1)) 
+            target_box = anno_boxes[task_id] # 获取target box eg:(1, 500, 10)
             # reconstruct the anno_box from multiple reg heads
             preds_dict[0]['anno_box'] = torch.cat(
                 (preds_dict[0]['reg'], preds_dict[0]['height'],
                  preds_dict[0]['dim'], preds_dict[0]['rot'],
                  preds_dict[0]['vel']),
-                dim=1)
+                dim=1) # (1, 10, 128, 128)
 
             # Regression loss for dimension, offset, height, rotation
-            ind = inds[task_id]
-            num = masks[task_id].float().sum()
-            pred = preds_dict[0]['anno_box'].permute(0, 2, 3, 1).contiguous()
-            pred = pred.view(pred.size(0), -1, pred.size(3))
-            pred = self._gather_feat(pred, ind)
-            mask = masks[task_id].unsqueeze(2).expand_as(target_box).float()
-            isnotnan = (~torch.isnan(target_box)).float()
+            ind = inds[task_id] # 获取有效位置索引
+            num = masks[task_id].float().sum() # 获取有效物体个数
+            pred = preds_dict[0]['anno_box'].permute(0, 2, 3, 1).contiguous() # （1, 128, 128, 10）
+            pred = pred.view(pred.size(0), -1, pred.size(3)) # 将中间两维合并--> (1, 16384, 10)
+            pred = self._gather_feat(pred, ind) # (1, 500, 10)
+            mask = masks[task_id].unsqueeze(2).expand_as(target_box).float() # (1, 500, 10)
+            isnotnan = (~torch.isnan(target_box)).float() # (1, 500, 10) 
             mask *= isnotnan
 
-            code_weights = self.train_cfg.get('code_weights', None)
-            bbox_weights = mask * mask.new_tensor(code_weights)
+            code_weights = self.train_cfg.get('code_weights', None) # code_weights=[1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.2]))
+            bbox_weights = mask * mask.new_tensor(code_weights) # (1, 500, 10) 
+            
+            # 计算回归损失
             loss_bbox = self.loss_bbox(
                 pred, target_box, bbox_weights, avg_factor=(num + 1e-4))
+           
+            # 记录loss
             loss_dict[f'task{task_id}.loss_heatmap'] = loss_heatmap
             loss_dict[f'task{task_id}.loss_bbox'] = loss_bbox
         return loss_dict

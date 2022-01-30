@@ -37,14 +37,14 @@ class CenterPoint(MVXTwoStageDetector):
         """Extract features of points."""
         if not self.with_pts_bbox:
             return None
-        voxels, num_points, coors = self.voxelize(pts)
-
-        voxel_features = self.pts_voxel_encoder(voxels, num_points, coors)
-        batch_size = coors[-1, 0] + 1
-        x = self.pts_middle_encoder(voxel_features, coors, batch_size)
-        x = self.pts_backbone(x)
+        voxels, num_points, coors = self.voxelize(pts) # eg: voxels：(152933, 10, 5), num_points:(152933,), coors:(152933, 4)
+        
+        voxel_features = self.pts_voxel_encoder(voxels, num_points, coors) # (152933, 5) 每个voxle取平均值
+        batch_size = coors[-1, 0] + 1 # 计算batch_size eg:2
+        x = self.pts_middle_encoder(voxel_features, coors, batch_size) # (2, 256, 128, 128)
+        x = self.pts_backbone(x) # (2, 128, 128, 128) 和 # (2, 256, 64, 64)
         if self.with_pts_neck:
-            x = self.pts_neck(x)
+            x = self.pts_neck(x) # (2, 512, 128, 128)
         return x
 
     def forward_pts_train(self,
@@ -68,9 +68,9 @@ class CenterPoint(MVXTwoStageDetector):
         Returns:
             dict: Losses of each branch.
         """
-        outs = self.pts_bbox_head(pts_feats)
-        loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs]
-        losses = self.pts_bbox_head.loss(*loss_inputs)
+        outs = self.pts_bbox_head(pts_feats) # 在这里进入centerpoint_head的forward函数
+        loss_inputs = [gt_bboxes_3d, gt_labels_3d, outs] # 经gt box，gt label和out freature组成list
+        losses = self.pts_bbox_head.loss(*loss_inputs) # 在这里进入centerpoint_head的loss函数
         return losses
 
     def simple_test_pts(self, x, img_metas, rescale=False):

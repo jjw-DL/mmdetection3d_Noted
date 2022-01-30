@@ -34,23 +34,24 @@ def draw_heatmap_gaussian(heatmap, center, radius, k=1):
     Returns:
         torch.Tensor: Masked heatmap.
     """
-    diameter = 2 * radius + 1
-    gaussian = gaussian_2d((diameter, diameter), sigma=diameter / 6)
+    diameter = 2 * radius + 1 # eg:radius=2
+    gaussian = gaussian_2d((diameter, diameter), sigma=diameter / 6) # 根据半径生成gaussian map eg:(5,5)
 
-    x, y = int(center[0]), int(center[1])
+    x, y = int(center[0]), int(center[1]) # 获取中心坐标
 
-    height, width = heatmap.shape[0:2]
+    height, width = heatmap.shape[0:2] # 获取heatmap的高和宽
 
-    left, right = min(x, radius), min(width - x, radius + 1)
-    top, bottom = min(y, radius), min(height - y, radius + 1)
+    # 对gaussian map上下左右进行截断防止越界
+    left, right = min(x, radius), min(width - x, radius + 1) # eg:2 和 3
+    top, bottom = min(y, radius), min(height - y, radius + 1)# eg:2 和 3
 
-    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right]
+    masked_heatmap = heatmap[y - top:y + bottom, x - left:x + right] # 截取heatmap的mask
     masked_gaussian = torch.from_numpy(
         gaussian[radius - top:radius + bottom,
                  radius - left:radius + right]).to(heatmap.device,
-                                                   torch.float32)
+                                                   torch.float32) # 截取gaussian map并转化为tensor 0 - 5
     if min(masked_gaussian.shape) > 0 and min(masked_heatmap.shape) > 0:
-        torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap)
+        torch.max(masked_heatmap, masked_gaussian * k, out=masked_heatmap) # 将gaussian赋值到mask对应位置，masked_heatmap与heatmap在内存上是一样的
     return heatmap
 
 

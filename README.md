@@ -2,6 +2,22 @@
   <img src="resources/mmdet3d-logo.png" width="600"/>
 </div>
 
+
+# MMDetection3D注释
+
+> 已完成注释
+- 纯Lidar检测:VoxelNet
+- Lidar与Camera融合检测:MVX-Net
+- NuScene优秀BaseLine: CenterPoint
+- KITTI数据集处理和转换
+- NuScene数据集处理和转换
+
+> 参考博客(后续抽时间更新)
+
+https://zhuanlan.zhihu.com/p/444441266
+
+
+
 [![docs](https://img.shields.io/badge/docs-latest-blue)](https://mmdetection3d.readthedocs.io/en/latest/)
 [![badge](https://github.com/open-mmlab/mmdetection3d/workflows/build/badge.svg)](https://github.com/open-mmlab/mmdetection3d/actions)
 [![codecov](https://codecov.io/gh/open-mmlab/mmdetection3d/branch/master/graph/badge.svg)](https://codecov.io/gh/open-mmlab/mmdetection3d)
